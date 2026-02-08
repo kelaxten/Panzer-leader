@@ -1683,43 +1683,39 @@ function advancePhase() {
       const firstSide = state.placementOrder[0];
       const secondSide = state.placementOrder[1];
       if (state.activeSide === firstSide) {
-        // Switch to second side placement — offer export first
-        showExportModal(() => {
-          state.activeSide = secondSide;
-          loadRackForSide(secondSide, 0);
-          addLog(`— ${sideLabel(secondSide)} Placement Phase —`, 'log-phase');
-          renderRack();
-          resizeCanvas();
-          updateUI();
-        });
+        // Transition to second side placement, then offer export
+        state.activeSide = secondSide;
+        loadRackForSide(secondSide, 0);
+        addLog(`— ${sideLabel(secondSide)} Placement Phase —`, 'log-phase');
+        renderRack();
+        resizeCanvas();
+        updateUI();
+        showExportModal();
         return;
       } else {
         // Both sides placed, start turn 1
         state.phase = PHASE_COMBAT;
         state.activeSide = ALLIED;
         state.turn = 1;
-        // Check for turn-1 reinforcements (shouldn't normally happen but handle it)
         if (checkReinforcements(ALLIED)) {
           state.phase = PHASE_REINFORCEMENT;
           loadRackForSide(ALLIED, 1);
           addLog(`═══ TURN 1 ═══`, 'log-phase');
           addLog(`— Allied Reinforcement Phase —`, 'log-phase');
-          renderRack();
-          resizeCanvas();
-          updateUI();
-          return;
+        } else {
+          addLog(`═══ TURN 1 ═══`, 'log-phase');
+          addLog(`— Allied Combat Phase —`, 'log-phase');
         }
-        addLog(`═══ TURN 1 ═══`, 'log-phase');
-        addLog(`— Allied Combat Phase —`, 'log-phase');
         renderRack();
         resizeCanvas();
         updateUI();
+        showExportModal();
         return;
       }
     }
 
     if (state.phase === PHASE_REINFORCEMENT) {
-      // Done placing reinforcements, proceed to combat
+      // Done placing reinforcements, proceed to combat (same side, no export)
       state.phase = PHASE_COMBAT;
       addLog(`— ${sideLabel(state.activeSide)} Combat Phase —`, 'log-phase');
       renderRack();
@@ -1732,20 +1728,20 @@ function advancePhase() {
   if (state.phase === PHASE_COMBAT) {
     state.phase = PHASE_MOVEMENT;
     addLog(`— ${sideLabel(state.activeSide)} Movement Phase —`, 'log-phase');
+    renderRack();
+    resizeCanvas();
+    updateUI();
   } else {
-    // End of movement: reset flags and show export modal
+    // End of movement: reset flags, transition to other side, then offer export
     for (const u of state.units) {
       if (u.side === state.activeSide && u.placed) {
         u.fired = false;
         u.moved = false;
       }
     }
-    showExportModal(() => { finishPhaseAdvance(); });
-    return;
+    finishPhaseAdvance();
+    showExportModal();
   }
-  renderRack();
-  resizeCanvas();
-  updateUI();
 }
 
 function exportGameState() {
@@ -1757,6 +1753,7 @@ function exportGameState() {
     turn: state.turn,
     activeSide: state.activeSide,
     phase: state.phase,
+    rack: state.rack,
     allReinforcements: state.allReinforcements,
     placementOrder: state.placementOrder,
     placementZones: {
@@ -1811,7 +1808,7 @@ function importGameState(encoded) {
   state.fireMode = false;
   state.reachableHexes = null;
   state.targetableHexes = null;
-  state.rack = [];
+  state.rack = data.rack || [];
   state.selectedRackIndex = -1;
   state.hoverHex = null;
   state.mouseHex = null;
@@ -1861,10 +1858,7 @@ function finishPhaseAdvance() {
   updateUI();
 }
 
-let pendingAdvance = null;
-
-function showExportModal(onContinue) {
-  pendingAdvance = onContinue;
+function showExportModal() {
   const safeName = (state.scenarioName || 'game').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
   const filename = `${safeName}-turn-${state.turn}-${state.activeSide}.json`;
   document.getElementById('export-filename').textContent = `File: ${filename}`;
@@ -2363,11 +2357,9 @@ function init() {
   document.getElementById('btn-export-download').addEventListener('click', () => {
     exportGameState();
     document.getElementById('export-modal').classList.remove('visible');
-    if (pendingAdvance) { pendingAdvance(); pendingAdvance = null; }
   });
   document.getElementById('btn-export-skip').addEventListener('click', () => {
     document.getElementById('export-modal').classList.remove('visible');
-    if (pendingAdvance) { pendingAdvance(); pendingAdvance = null; }
   });
 }
 
