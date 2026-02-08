@@ -1818,8 +1818,8 @@ function importGameState(encoded) {
     document.getElementById('log-entries').innerHTML = data.battleLog;
   }
 
-  resizeCanvas();
   renderRack();
+  resizeCanvas();
   updateUI();
 }
 
@@ -2357,9 +2357,13 @@ function init() {
   document.getElementById('btn-export-download').addEventListener('click', () => {
     exportGameState();
     document.getElementById('export-modal').classList.remove('visible');
+    renderRack();
+    resizeCanvas();
   });
   document.getElementById('btn-export-skip').addEventListener('click', () => {
     document.getElementById('export-modal').classList.remove('visible');
+    renderRack();
+    resizeCanvas();
   });
 }
 
