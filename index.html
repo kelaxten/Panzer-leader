@@ -1,0 +1,2146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Iron &amp; Steel — Tactical Wargame</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1a1a1a; color: #e0dcc8; font-family: 'Courier New', monospace; display: flex; height: 100vh; overflow: hidden; }
+#map-container { flex: 1; min-width: 0; position: relative; display: flex; flex-direction: column; overflow: hidden; }
+canvas { display: block; cursor: crosshair; flex: 1; }
+#sidebar { width: 320px; flex-shrink: 0; background: #2a2a28; border-left: 2px solid #555; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+#turn-bar { background: #333; padding: 8px 12px; border-bottom: 2px solid #555; text-align: center; }
+#turn-bar h2 { font-size: 14px; margin-bottom: 4px; }
+#turn-bar .phase { font-size: 18px; font-weight: bold; }
+.allied-phase { color: #6b8e4e; }
+.german-phase { color: #8a8a8a; }
+#unit-info { padding: 12px; border-bottom: 2px solid #555; min-height: 180px; }
+#unit-info h3 { font-size: 13px; color: #aaa; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px; }
+.stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 13px; }
+.stat-label { color: #888; }
+.stat-value { color: #e0dcc8; font-weight: bold; text-align: right; }
+#actions { padding: 12px; border-bottom: 2px solid #555; }
+#actions button { display: block; width: 100%; padding: 8px; margin-bottom: 6px; background: #444; color: #e0dcc8; border: 1px solid #666; font-family: 'Courier New', monospace; font-size: 13px; cursor: pointer; }
+#actions button:hover { background: #555; }
+#actions button:disabled { opacity: 0.4; cursor: default; }
+#actions button.active { background: #6b8e4e; color: #fff; border-color: #8ab86e; }
+#actions button.hidden { display: none; }
+#battle-log { flex: 1; padding: 12px; overflow-y: auto; font-size: 12px; }
+#battle-log h3 { font-size: 13px; color: #aaa; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px; }
+#battle-log .log-entry { margin-bottom: 4px; padding: 3px 0; border-bottom: 1px solid #333; }
+.log-combat { color: #d48a6e; }
+.log-move { color: #8ab86e; }
+.log-phase { color: #6ea8d4; font-weight: bold; }
+.log-result { color: #e0dcc8; }
+.log-place { color: #c8a86e; }
+#help-text { padding: 8px 12px; background: #222; font-size: 11px; color: #666; border-top: 1px solid #444; }
+.unit-name-display { font-size: 16px; font-weight: bold; margin-bottom: 8px; }
+.german-unit { color: #b0b0b0; }
+.allied-unit { color: #8ab86e; }
+
+/* Rack styles */
+#rack-container {
+  background: #222;
+  border-top: 2px solid #555;
+  padding: 6px 10px;
+  display: none;
+  flex-direction: column;
+  min-height: 88px;
+}
+#rack-container.visible { display: flex; }
+#rack-label {
+  font-size: 11px;
+  color: #aaa;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+#rack-units {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.rack-unit {
+  flex-shrink: 0;
+  width: 72px;
+  height: 52px;
+  border: 2px solid #666;
+  cursor: grab;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  user-select: none;
+  transition: border-color 0.15s, transform 0.1s;
+  position: relative;
+}
+.rack-unit:hover { border-color: #aaa; transform: translateY(-2px); }
+.rack-unit.selected { border-color: #ff0; box-shadow: 0 0 8px rgba(255,255,0,0.4); transform: translateY(-3px); }
+.rack-unit.german-rack { background: #5a5a5a; color: #ddd; }
+.rack-unit.allied-rack { background: #4a6a3a; color: #dfd; }
+.rack-unit-name { font-weight: bold; font-size: 10px; text-align: center; line-height: 1.1; }
+.rack-unit-stats { font-size: 9px; color: #bbb; margin-top: 2px; }
+.rack-unit-class { font-size: 8px; color: #888; }
+.rack-unit .armored-badge {
+  position: absolute;
+  top: 1px; right: 1px;
+  width: 10px; height: 10px;
+  border: 1px solid #aaa;
+  border-radius: 50%;
+}
+
+/* Rules panel */
+#rules-panel {
+  display: none;
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: #2a2a28;
+  overflow-y: auto;
+  padding: 16px;
+  z-index: 10;
+}
+#rules-panel.visible { display: block; }
+#rules-panel h2 { font-size: 15px; color: #e0dcc8; margin: 16px 0 8px; border-bottom: 1px solid #555; padding-bottom: 4px; }
+#rules-panel h3 { font-size: 13px; color: #aaa; margin: 12px 0 4px; text-transform: uppercase; letter-spacing: 1px; }
+#rules-panel p, #rules-panel li { font-size: 12px; color: #ccc; line-height: 1.6; }
+#rules-panel table { width: 100%; font-size: 11px; border-collapse: collapse; margin: 8px 0; }
+#rules-panel th { color: #aaa; text-align: left; border-bottom: 1px solid #555; padding: 3px 4px; }
+#rules-panel td { color: #ccc; padding: 3px 4px; border-bottom: 1px solid #333; }
+#rules-panel kbd { background: #444; border: 1px solid #666; padding: 1px 5px; font-size: 11px; border-radius: 2px; }
+#btn-rules-close { float: right; background: none; border: 1px solid #666; color: #aaa; cursor: pointer; padding: 2px 8px; font-family: 'Courier New', monospace; font-size: 12px; }
+
+/* Scenario selector overlay */
+#scenario-select {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(10,10,10,0.95);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+#scenario-select h1 {
+  font-size: 28px;
+  color: #e0dcc8;
+  margin-bottom: 8px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+}
+#scenario-select .subtitle {
+  font-size: 13px;
+  color: #888;
+  margin-bottom: 32px;
+}
+#scenario-cards {
+  display: flex;
+  gap: 24px;
+}
+.scenario-card {
+  width: 280px;
+  padding: 24px;
+  background: #2a2a28;
+  border: 2px solid #555;
+  cursor: pointer;
+  transition: border-color 0.2s, transform 0.15s;
+}
+.scenario-card:hover {
+  border-color: #aaa;
+  transform: translateY(-4px);
+}
+.scenario-card h2 {
+  font-size: 16px;
+  color: #e0dcc8;
+  margin-bottom: 8px;
+}
+.scenario-card .sc-desc {
+  font-size: 12px;
+  color: #999;
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+.scenario-card .sc-meta {
+  font-size: 11px;
+  color: #666;
+}
+</style>
+</head>
+<body>
+<div id="scenario-select">
+  <h1>Iron &amp; Steel</h1>
+  <div class="subtitle">Tactical Wargame &mdash; Select Scenario</div>
+  <div id="scenario-cards">
+    <div class="scenario-card" id="card-cobra">
+      <h2>Cobra Engagement</h2>
+      <div class="sc-desc">A combined-arms engagement in the Norman bocage. US armor and infantry push through hedgerow country against dug-in German Panzer and infantry forces.</div>
+      <div class="sc-meta">24&times;18 hex map &middot; ~12 units per side &middot; Reinforcements turn 2-3</div>
+    </div>
+    <div class="scenario-card" id="card-omaha">
+      <h2>Omaha Beach &mdash; D-Day</h2>
+      <div class="sc-desc">June 6, 1944. The US 1st and 29th Infantry Divisions assault the fortified bluffs of Omaha Beach against the German 352nd Infantry Division. Storm the beaches and break through the Atlantic Wall.</div>
+      <div class="sc-meta">30&times;20 hex map &middot; ~35 German / 13+ US first wave &middot; Reinforcement waves turns 2-4</div>
+    </div>
+  </div>
+</div>
+<div id="map-container">
+  <canvas id="map"></canvas>
+  <div id="rack-container">
+    <div id="rack-label">Place your units — drag onto highlighted hexes, or click then click hex</div>
+    <div id="rack-units"></div>
+  </div>
+</div>
+<div id="sidebar">
+  <div id="turn-bar">
+    <h2>IRON &amp; STEEL</h2>
+    <div id="turn-display">Turn 1</div>
+    <div id="phase-display" class="phase allied-phase">Allied Placement Phase</div>
+  </div>
+  <div id="unit-info">
+    <h3>Unit Info</h3>
+    <div id="unit-details"><i style="color:#666">Select a unit from the rack to place it</i></div>
+  </div>
+  <div id="actions">
+    <button id="btn-fire" disabled>Fire at Target [F]</button>
+    <button id="btn-move" disabled>Enter Move Mode [M]</button>
+    <button id="btn-return" disabled>Return to Rack [R]</button>
+    <button id="btn-next-unit" disabled>Next Unit [N]</button>
+    <button id="btn-end-phase">Done Placing [Enter]</button>
+    <button id="btn-rules">[?] Rules</button>
+  </div>
+  <div id="battle-log">
+    <h3>Battle Log</h3>
+    <div id="log-entries"></div>
+  </div>
+  <div id="help-text">
+    Click rack unit, then click highlighted hex to place.<br>
+    Drag from rack to map also works. Right-click placed unit to return to rack.<br>
+    [R] Return selected to rack &middot; [N] Next unit &middot; [Enter] Done placing
+  </div>
+  <div id="rules-panel">
+    <button id="btn-rules-close">[X] Close</button>
+    <h2>Rules Manual</h2>
+
+    <h3>Overview</h3>
+    <p>Iron &amp; Steel is a hex-based tactical wargame for two players (Allied vs German).
+    Players alternate placement, then take turns with combat and movement phases.
+    Goal: destroy or rout enemy forces.</p>
+
+    <h3>Turn Structure</h3>
+    <table>
+      <tr><th>Phase</th><th>Description</th></tr>
+      <tr><td>Setup</td><td>Allied Placement &rarr; German Placement</td></tr>
+      <tr><td colspan="2" style="color:#888;font-style:italic">Then each turn repeats:</td></tr>
+      <tr><td>1</td><td>Allied Reinforcement (if any)</td></tr>
+      <tr><td>2</td><td>Allied Combat</td></tr>
+      <tr><td>3</td><td>Allied Movement</td></tr>
+      <tr><td>4</td><td>German Reinforcement (if any)</td></tr>
+      <tr><td>5</td><td>German Combat</td></tr>
+      <tr><td>6</td><td>German Movement</td></tr>
+    </table>
+    <p><em>Omaha scenario: Germans place first.</em></p>
+
+    <h3>Placement</h3>
+    <ul>
+      <li>Select unit from rack (click or drag)</li>
+      <li>Place on highlighted hexes in your zone</li>
+      <li>Max 4 friendly units per hex (stacking limit)</li>
+      <li>Right-click or <kbd>R</kbd> to return a placed unit to rack</li>
+      <li><kbd>Enter</kbd> to finish (unplaced units are forfeited)</li>
+    </ul>
+
+    <h3>Combat</h3>
+    <ul>
+      <li>Select unit &rarr; press <kbd>F</kbd> or click Fire button</li>
+      <li>Valid targets highlighted in red (within range + line of sight)</li>
+      <li>Click target hex to attack</li>
+      <li>Attack uses AT factor vs armored targets, AP factor vs unarmored</li>
+      <li>Defense = target&rsquo;s DF &times; terrain modifier</li>
+      <li>Odds ratio determines CRT column</li>
+      <li>d6 roll determines result</li>
+    </ul>
+
+    <h3>Combat Results Table</h3>
+    <table>
+      <tr><th>Roll</th><th>1:4</th><th>1:3</th><th>1:2</th><th>1:1</th><th>2:1</th><th>3:1</th><th>4:1</th><th>5:1</th><th>6:1</th></tr>
+      <tr><td>1</td><td>AE</td><td>AE</td><td>AE</td><td>AE</td><td>AR</td><td>AR</td><td>AR</td><td>DR</td><td>DR</td></tr>
+      <tr><td>2</td><td>AE</td><td>AE</td><td>AE</td><td>AR</td><td>AR</td><td>DR</td><td>DR</td><td>DR</td><td>DE</td></tr>
+      <tr><td>3</td><td>AE</td><td>AE</td><td>AR</td><td>AR</td><td>DR</td><td>DR</td><td>DE</td><td>DE</td><td>DE</td></tr>
+      <tr><td>4</td><td>AE</td><td>AR</td><td>AR</td><td>DR</td><td>DR</td><td>DE</td><td>DE</td><td>DE</td><td>DE</td></tr>
+      <tr><td>5</td><td>AR</td><td>DR</td><td>DR</td><td>DR</td><td>DE</td><td>DE</td><td>DE</td><td>DE</td><td>DE</td></tr>
+      <tr><td>6</td><td>DR</td><td>DR</td><td>DR</td><td>DE</td><td>DE</td><td>DE</td><td>DE</td><td>DE</td><td>DE</td></tr>
+    </table>
+    <p><strong>DE</strong>=Defender Eliminated &middot; <strong>DR</strong>=Defender Retreats &middot;
+    <strong>AE</strong>=Attacker Eliminated &middot; <strong>AR</strong>=Attacker Retreats</p>
+
+    <h3>Movement</h3>
+    <ul>
+      <li>Select unit &rarr; press <kbd>M</kbd> or click Move button</li>
+      <li>Green hexes show reachable destinations</li>
+      <li>Movement costs vary by terrain and unit type</li>
+      <li>Cannot enter enemy-occupied hexes</li>
+      <li>Units that fired cannot move (and vice versa)</li>
+    </ul>
+
+    <h3>Terrain Reference</h3>
+    <table>
+      <tr><th>Terrain</th><th>Inf</th><th>Veh</th><th>Def</th><th>LOS</th></tr>
+      <tr><td>Clear</td><td>1</td><td>1</td><td>&times;1</td><td>No</td></tr>
+      <tr><td>Woods</td><td>2</td><td>3</td><td>&times;2</td><td>Yes</td></tr>
+      <tr><td>Town</td><td>1</td><td>1</td><td>&times;2</td><td>Yes</td></tr>
+      <tr><td>Hill</td><td>2</td><td>2</td><td>&times;2</td><td>Yes</td></tr>
+      <tr><td>Road</td><td>&frac12;</td><td>&frac12;</td><td>&times;1</td><td>No</td></tr>
+      <tr><td>Bocage</td><td>2</td><td>4</td><td>&times;2</td><td>Yes</td></tr>
+      <tr><td>Beach</td><td>1</td><td>2</td><td>&times;1</td><td>No</td></tr>
+      <tr><td>Bluff</td><td>3</td><td>&#8734;</td><td>&times;2</td><td>Yes</td></tr>
+      <tr><td>Fortification</td><td>1</td><td>&#8734;</td><td>&times;3</td><td>Yes</td></tr>
+    </table>
+
+    <h3>Unit Stats</h3>
+    <ul>
+      <li><strong>AT</strong> &mdash; Anti-Tank factor (vs armored)</li>
+      <li><strong>AP</strong> &mdash; Anti-Personnel factor (vs unarmored)</li>
+      <li><strong>DF</strong> &mdash; Defense factor (modified by terrain)</li>
+      <li><strong>MP</strong> &mdash; Movement points per turn</li>
+      <li><strong>Range</strong> &mdash; Max firing distance in hexes</li>
+      <li><strong>Armored</strong> &mdash; shown by circle on counter; determines whether attacker uses AT or AP</li>
+    </ul>
+
+    <h3>Controls</h3>
+    <table>
+      <tr><th>Key</th><th>Action</th></tr>
+      <tr><td><kbd>F</kbd></td><td>Enter fire mode</td></tr>
+      <tr><td><kbd>M</kbd></td><td>Enter move mode</td></tr>
+      <tr><td><kbd>R</kbd></td><td>Return selected unit to rack</td></tr>
+      <tr><td><kbd>N</kbd></td><td>Next unit / cycle rack</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td>End current phase</td></tr>
+      <tr><td><kbd>Escape</kbd></td><td>Deselect / cancel</td></tr>
+      <tr><td><kbd>?</kbd></td><td>Toggle this rules panel</td></tr>
+    </table>
+    <p>Mouse: left-click select/place &middot; right-click deselect/return &middot; drag from rack to map</p>
+
+    <h3>Coming Soon</h3>
+    <table>
+      <tr><th>Feature</th><th>Description</th></tr>
+      <tr><td>Play By Email</td><td>Save game state as JSON, download/upload turn files</td></tr>
+      <tr><td>Save / Load</td><td>Serialize game state to localStorage or file</td></tr>
+      <tr><td>Victory Conditions</td><td>Win/loss criteria per scenario (objectives, losses, turn limit)</td></tr>
+      <tr><td>Undo</td><td>Undo last action within a phase</td></tr>
+      <tr><td>AI Opponent</td><td>Computer-controlled side for solo play</td></tr>
+    </table>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════
+// SECTION 1: CONSTANTS & DATA
+// ═══════════════════════════════════════════
+
+const HEX_SIZE = 32;
+const HEX_W = Math.sqrt(3) * HEX_SIZE;
+const HEX_H = 2 * HEX_SIZE;
+let MAP_COLS = 24;
+let MAP_ROWS = 18;
+const STACK_LIMIT = 4;
+
+// Terrain types
+const T = {
+  CLEAR: 0, WOODS: 1, TOWN: 2, HILL: 3, ROAD: 4, BOCAGE: 5,
+  BEACH: 6, BLUFF: 7, FORTIFICATION: 8
+};
+
+const TERRAIN_INFO = {
+  [T.CLEAR]:  { name: 'Clear',  moveCostInf: 1, moveCostVeh: 1, dfMod: 1, blockLOS: false, color: '#5a7a3a' },
+  [T.WOODS]:  { name: 'Woods',  moveCostInf: 2, moveCostVeh: 3, dfMod: 2, blockLOS: true,  color: '#2d5a1e' },
+  [T.TOWN]:   { name: 'Town',   moveCostInf: 1, moveCostVeh: 1, dfMod: 2, blockLOS: true,  color: '#7a6a5a' },
+  [T.HILL]:   { name: 'Hill',   moveCostInf: 2, moveCostVeh: 2, dfMod: 2, blockLOS: true,  color: '#8a7a4a' },
+  [T.ROAD]:   { name: 'Road',   moveCostInf: 0.5, moveCostVeh: 0.5, dfMod: 1, blockLOS: false, color: '#6a7a4a' },
+  [T.BOCAGE]: { name: 'Bocage', moveCostInf: 2, moveCostVeh: 4, dfMod: 2, blockLOS: true,  color: '#3a5a2a' },
+  [T.BEACH]:  { name: 'Beach',  moveCostInf: 1, moveCostVeh: 2, dfMod: 1, blockLOS: false, color: '#c8b878' },
+  [T.BLUFF]:  { name: 'Bluff',  moveCostInf: 3, moveCostVeh: 99, dfMod: 2, blockLOS: true, color: '#6a6a4a' },
+  [T.FORTIFICATION]: { name: 'Fortification', moveCostInf: 1, moveCostVeh: 99, dfMod: 3, blockLOS: true, color: '#555555' },
+};
+
+// Sides
+const ALLIED = 'allied';
+const GERMAN = 'german';
+
+// Unit classes
+const INF = 'infantry';
+const ARM = 'armor';
+const MECH = 'mechanized';
+const AT_GUN = 'at_gun';
+const ART = 'artillery';
+const RECON = 'recon';
+
+// Unit type definitions
+const UNIT_TYPES = {
+  // German units
+  'ge_pzivh':     { name: 'PzIV H',       class: ARM,  armored: true,  mp: 12, at: 12, ap: 6,  df: 4, range: 8,  symbol: 'X', side: GERMAN },
+  'ge_panther':   { name: 'Panther',       class: ARM,  armored: true,  mp: 12, at: 18, ap: 4,  df: 6, range: 10, symbol: 'X', side: GERMAN },
+  'ge_tiger':     { name: 'Tiger I',       class: ARM,  armored: true,  mp: 10, at: 20, ap: 6,  df: 8, range: 10, symbol: 'X', side: GERMAN },
+  'ge_stugiii':   { name: 'StuG III',      class: ARM,  armored: true,  mp: 12, at: 14, ap: 4,  df: 4, range: 8,  symbol: 'X', side: GERMAN },
+  'ge_inf':       { name: 'Infantry',      class: INF,  armored: false, mp: 4,  at: 2,  ap: 6,  df: 4, range: 1,  symbol: 'X', side: GERMAN },
+  'ge_mg':        { name: 'MG Sec.',       class: INF,  armored: false, mp: 4,  at: 0,  ap: 8,  df: 2, range: 4,  symbol: '.', side: GERMAN },
+  'ge_pak40':     { name: 'PaK 40',        class: AT_GUN, armored: false, mp: 2, at: 14, ap: 2, df: 2, range: 8,  symbol: '|', side: GERMAN },
+  'ge_grenadier': { name: 'Panzergren.',   class: MECH, armored: false, mp: 6,  at: 4,  ap: 6,  df: 4, range: 1,  symbol: 'X', side: GERMAN },
+  'ge_wespe':     { name: 'Wespe',         class: ART,  armored: true,  mp: 10, at: 2,  ap: 10, df: 2, range: 16, symbol: 'O', side: GERMAN },
+  'ge_sdkfz234':  { name: 'SdKfz 234',    class: RECON, armored: true, mp: 16, at: 6,  ap: 4,  df: 2, range: 6,  symbol: '/', side: GERMAN },
+  'ge_flak88':    { name: 'Flak 88',       class: AT_GUN, armored: false, mp: 0, at: 20, ap: 8, df: 2, range: 12, symbol: '*', side: GERMAN },
+  'ge_mortar':    { name: '81mm Mortar',   class: INF,  armored: false, mp: 4,  at: 0,  ap: 6,  df: 2, range: 6,  symbol: 'M', side: GERMAN },
+  // German Omaha units
+  'ge_mg42_bunker': { name: 'MG42 Bunker', class: INF,    armored: false, mp: 0,  at: 0,  ap: 10, df: 4, range: 6,  symbol: '.', side: GERMAN },
+  'ge_75mm_case':   { name: '75mm Csmt',   class: AT_GUN, armored: false, mp: 0,  at: 10, ap: 8,  df: 4, range: 8,  symbol: '|', side: GERMAN },
+  'ge_88mm_case':   { name: '88mm Csmt',   class: AT_GUN, armored: false, mp: 0,  at: 20, ap: 8,  df: 4, range: 10, symbol: '*', side: GERMAN },
+  'ge_50mm_at':     { name: '50mm AT',     class: AT_GUN, armored: false, mp: 0,  at: 8,  ap: 2,  df: 2, range: 6,  symbol: '|', side: GERMAN },
+  'ge_wn_garrison': { name: 'WN Garrison', class: INF,    armored: false, mp: 2,  at: 2,  ap: 6,  df: 4, range: 1,  symbol: 'X', side: GERMAN },
+  'ge_81mm_mortar': { name: '81mm Mortar', class: INF,    armored: false, mp: 0,  at: 0,  ap: 8,  df: 2, range: 8,  symbol: 'M', side: GERMAN },
+  'ge_352_reserve': { name: '352nd Res.',  class: INF,    armored: false, mp: 4,  at: 2,  ap: 6,  df: 4, range: 1,  symbol: 'X', side: GERMAN },
+  'ge_tobruk':      { name: 'Tobruk',      class: AT_GUN, armored: false, mp: 0,  at: 6,  ap: 4,  df: 4, range: 4,  symbol: '|', side: GERMAN },
+  // American units
+  'us_sherman':   { name: 'M4 Sherman',    class: ARM,  armored: true,  mp: 12, at: 10, ap: 6,  df: 4, range: 8,  symbol: 'X', side: ALLIED },
+  'us_76sherman': { name: 'M4A1(76)',      class: ARM,  armored: true,  mp: 12, at: 14, ap: 4,  df: 4, range: 10, symbol: 'X', side: ALLIED },
+  'us_stuart':    { name: 'M5 Stuart',     class: ARM,  armored: true,  mp: 16, at: 6,  ap: 4,  df: 2, range: 6,  symbol: 'X', side: ALLIED },
+  'us_inf':       { name: 'Infantry',      class: INF,  armored: false, mp: 4,  at: 2,  ap: 6,  df: 4, range: 1,  symbol: 'X', side: ALLIED },
+  'us_ranger':    { name: 'Rangers',       class: INF,  armored: false, mp: 6,  at: 4,  ap: 8,  df: 6, range: 1,  symbol: 'X', side: ALLIED },
+  'us_mg':        { name: '.30 Cal MG',    class: INF,  armored: false, mp: 4,  at: 0,  ap: 8,  df: 2, range: 4,  symbol: '.', side: ALLIED },
+  'us_57mm':      { name: '57mm AT Gun',   class: AT_GUN, armored: false, mp: 2, at: 10, ap: 2, df: 2, range: 8,  symbol: '|', side: ALLIED },
+  'us_airborne':  { name: 'Airborne',      class: INF,  armored: false, mp: 6,  at: 4,  ap: 8,  df: 6, range: 1,  symbol: 'X', side: ALLIED },
+  'us_priest':    { name: 'M7 Priest',     class: ART,  armored: true,  mp: 10, at: 2,  ap: 10, df: 2, range: 16, symbol: 'O', side: ALLIED },
+  'us_hellcat':   { name: 'M18 Hellcat',   class: ARM,  armored: true,  mp: 16, at: 16, ap: 4,  df: 2, range: 10, symbol: 'X', side: ALLIED },
+  'us_greyhound': { name: 'M8 Greyhound',  class: RECON, armored: true, mp: 16, at: 4,  ap: 4,  df: 2, range: 6,  symbol: '/', side: ALLIED },
+  'us_mortar':    { name: '81mm Mortar',   class: INF,  armored: false, mp: 4,  at: 0,  ap: 6,  df: 2, range: 6,  symbol: 'M', side: ALLIED },
+  // American Omaha units
+  'us_116_inf':    { name: '116th Inf',   class: INF,  armored: false, mp: 4,  at: 2,  ap: 6,  df: 4, range: 1,  symbol: 'X', side: ALLIED },
+  'us_16_inf':     { name: '16th Inf',    class: INF,  armored: false, mp: 4,  at: 2,  ap: 6,  df: 4, range: 1,  symbol: 'X', side: ALLIED },
+  'us_18_inf':     { name: '18th Inf',    class: INF,  armored: false, mp: 4,  at: 2,  ap: 6,  df: 4, range: 1,  symbol: 'X', side: ALLIED },
+  'us_2ranger':    { name: '2nd Rangers', class: INF,  armored: false, mp: 6,  at: 4,  ap: 8,  df: 6, range: 1,  symbol: 'X', side: ALLIED },
+  'us_5ranger':    { name: '5th Rangers', class: INF,  armored: false, mp: 6,  at: 4,  ap: 8,  df: 6, range: 1,  symbol: 'X', side: ALLIED },
+  'us_743_sherman': { name: '743rd Tank', class: ARM,  armored: true,  mp: 8,  at: 10, ap: 6,  df: 4, range: 8,  symbol: 'X', side: ALLIED },
+  'us_741_sherman': { name: '741st Tank', class: ARM,  armored: true,  mp: 8,  at: 10, ap: 6,  df: 2, range: 8,  symbol: 'X', side: ALLIED },
+  'us_engineer':   { name: 'Engineers',   class: INF,  armored: false, mp: 4,  at: 0,  ap: 4,  df: 2, range: 1,  symbol: 'X', side: ALLIED },
+  'us_105mm':      { name: '105mm How.',  class: ART,  armored: false, mp: 2,  at: 2,  ap: 10, df: 2, range: 12, symbol: 'O', side: ALLIED },
+  'us_dd_tank':    { name: 'DD Sherman',  class: ARM,  armored: true,  mp: 8,  at: 10, ap: 6,  df: 2, range: 8,  symbol: 'X', side: ALLIED },
+};
+
+// Combat Results Table
+const CRT_COLUMNS = ['1:4','1:3','1:2','1:1','2:1','3:1','4:1','5:1','6:1'];
+const CRT = {
+  '1:4': ['AE','AE','AE','AE','AR','DR'],
+  '1:3': ['AE','AE','AE','AR','DR','DR'],
+  '1:2': ['AE','AE','AR','AR','DR','DR'],
+  '1:1': ['AE','AR','AR','DR','DR','DE'],
+  '2:1': ['AR','AR','DR','DR','DE','DE'],
+  '3:1': ['AR','DR','DR','DE','DE','DE'],
+  '4:1': ['AR','DR','DE','DE','DE','DE'],
+  '5:1': ['DR','DR','DE','DE','DE','DE'],
+  '6:1': ['DR','DE','DE','DE','DE','DE'],
+};
+
+// ═══════════════════════════════════════════
+// SECTION 2: GAME STATE
+// ═══════════════════════════════════════════
+
+// Phases
+const PHASE_PLACEMENT = 'placement';
+const PHASE_REINFORCEMENT = 'reinforcement';
+const PHASE_COMBAT = 'combat';
+const PHASE_MOVEMENT = 'movement';
+
+let state = {
+  map: [],
+  units: [],
+  turn: 1,
+  activeSide: ALLIED,
+  phase: PHASE_PLACEMENT,
+  selectedUnitId: null,
+  moveMode: false,
+  fireMode: false,
+  reachableHexes: null,
+  targetableHexes: null,
+  // Placement state
+  rack: [],                // array of { type, side } for units waiting to be placed
+  selectedRackIndex: -1,   // which rack unit is selected (-1 = none)
+  placementZones: null,    // { allied: Set<hexKey>, german: Set<hexKey> }
+  allReinforcements: [],   // { type, side, availableTurn } for later-arriving units
+  hoverHex: null,          // { col, row } for drag hover highlight
+  mouseHex: null,          // { col, row } for general mouse hover
+  placementOrder: [ALLIED, GERMAN],  // which side places first, then second
+};
+
+let nextUnitId = 1;
+
+function createUnit(typeId, col, row) {
+  return {
+    id: nextUnitId++,
+    type: typeId,
+    side: UNIT_TYPES[typeId].side,
+    col, row,
+    fired: false,
+    moved: false,
+    dispersed: false,
+    destroyed: false,
+    placed: true,
+  };
+}
+
+// ═══════════════════════════════════════════
+// SECTION 2b: TEST MAP & SCENARIO
+// ═══════════════════════════════════════════
+
+function generateTestMap() {
+  const map = [];
+  for (let c = 0; c < MAP_COLS; c++) {
+    map[c] = [];
+    for (let r = 0; r < MAP_ROWS; r++) {
+      map[c][r] = T.CLEAR;
+    }
+  }
+  // Roads running east-west
+  for (let c = 0; c < MAP_COLS; c++) { map[c][9] = T.ROAD; }
+  for (let c = 4; c < 14; c++) { map[c][5] = T.ROAD; }
+  // Road running north-south
+  for (let r = 0; r < MAP_ROWS; r++) { map[12][r] = T.ROAD; }
+
+  // Towns
+  const towns = [[12,9],[12,5],[13,9],[11,9],[6,5],[7,5],[18,3],[19,3],[4,14],[5,14],[10,13],[11,13]];
+  towns.forEach(([c,r]) => { if (c < MAP_COLS && r < MAP_ROWS) map[c][r] = T.TOWN; });
+
+  // Woods clusters
+  const woods = [
+    [2,2],[3,2],[3,3],[2,3],
+    [7,1],[8,1],[8,2],[7,2],
+    [15,2],[16,2],[16,3],[15,3],[14,3],
+    [1,7],[2,7],[2,8],[1,8],[3,8],
+    [20,6],[21,6],[21,7],[20,7],[22,7],
+    [6,12],[7,12],[7,13],[6,13],
+    [17,11],[18,11],[18,12],[17,12],[19,12],
+    [3,16],[4,16],[4,17],[3,17],
+    [14,15],[15,15],[15,16],[14,16],
+    [22,14],[23,14],[22,15],[23,15],
+  ];
+  woods.forEach(([c,r]) => { if (c < MAP_COLS && r < MAP_ROWS) map[c][r] = T.WOODS; });
+
+  // Hills
+  const hills = [
+    [9,3],[10,3],[10,4],[9,4],
+    [19,8],[20,8],[20,9],[19,9],
+    [5,10],[6,10],[5,11],
+    [15,13],[16,13],[16,14],
+  ];
+  hills.forEach(([c,r]) => { if (c < MAP_COLS && r < MAP_ROWS) map[c][r] = T.HILL; });
+
+  // Bocage
+  const bocage = [
+    [0,5],[1,5],[0,6],[1,6],
+    [22,2],[23,2],[23,3],
+    [8,15],[9,15],[9,16],[8,16],
+    [20,13],[21,13],[21,14],
+  ];
+  bocage.forEach(([c,r]) => { if (c < MAP_COLS && r < MAP_ROWS) map[c][r] = T.BOCAGE; });
+
+  return map;
+}
+
+function loadTestScenario() {
+  MAP_COLS = 24;
+  MAP_ROWS = 18;
+  nextUnitId = 1;
+  state.map = generateTestMap();
+  state.units = [];
+  state.turn = 1;
+  state.activeSide = ALLIED;
+  state.phase = PHASE_PLACEMENT;
+
+  // Build placement zones
+  const alliedZone = new Set();
+  for (let c = 0; c <= 7; c++) {
+    for (let r = 8; r <= 17; r++) {
+      alliedZone.add(hexKey(c, r));
+    }
+  }
+  const germanZone = new Set();
+  for (let c = 16; c <= 23; c++) {
+    for (let r = 0; r <= 9; r++) {
+      germanZone.add(hexKey(c, r));
+    }
+  }
+  state.placementZones = { [ALLIED]: alliedZone, [GERMAN]: germanZone };
+  state.placementOrder = [ALLIED, GERMAN];
+
+  // Define initial units (availableTurn 0 = initial placement)
+  const scenarioUnits = [
+    // Allied — initial
+    { type: 'us_sherman',   side: ALLIED, availableTurn: 0 },
+    { type: 'us_sherman',   side: ALLIED, availableTurn: 0 },
+    { type: 'us_76sherman', side: ALLIED, availableTurn: 0 },
+    { type: 'us_inf',       side: ALLIED, availableTurn: 0 },
+    { type: 'us_inf',       side: ALLIED, availableTurn: 0 },
+    { type: 'us_inf',       side: ALLIED, availableTurn: 0 },
+    { type: 'us_ranger',    side: ALLIED, availableTurn: 0 },
+    { type: 'us_mg',        side: ALLIED, availableTurn: 0 },
+    { type: 'us_57mm',      side: ALLIED, availableTurn: 0 },
+    { type: 'us_airborne',  side: ALLIED, availableTurn: 0 },
+    { type: 'us_mortar',    side: ALLIED, availableTurn: 0 },
+    { type: 'us_stuart',    side: ALLIED, availableTurn: 0 },
+    // Allied — reinforcements turn 3
+    { type: 'us_hellcat',   side: ALLIED, availableTurn: 3 },
+    { type: 'us_priest',    side: ALLIED, availableTurn: 3 },
+    // German — initial
+    { type: 'ge_panther',   side: GERMAN, availableTurn: 0 },
+    { type: 'ge_pzivh',     side: GERMAN, availableTurn: 0 },
+    { type: 'ge_stugiii',   side: GERMAN, availableTurn: 0 },
+    { type: 'ge_inf',       side: GERMAN, availableTurn: 0 },
+    { type: 'ge_inf',       side: GERMAN, availableTurn: 0 },
+    { type: 'ge_grenadier', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_pak40',     side: GERMAN, availableTurn: 0 },
+    { type: 'ge_mg',        side: GERMAN, availableTurn: 0 },
+    // German — reinforcements turn 2
+    { type: 'ge_tiger',     side: GERMAN, availableTurn: 2 },
+    { type: 'ge_mortar',    side: GERMAN, availableTurn: 2 },
+  ];
+
+  // Separate into initial placement rack and reinforcements
+  state.rack = [];
+  state.allReinforcements = [];
+  for (const entry of scenarioUnits) {
+    if (entry.availableTurn === 0) {
+      if (entry.side === ALLIED) {
+        state.rack.push({ type: entry.type, side: entry.side });
+      } else {
+        // German initial units go to reinforcements pool, loaded when German placement starts
+        state.allReinforcements.push(entry);
+      }
+    } else {
+      state.allReinforcements.push(entry);
+    }
+  }
+
+  state.selectedRackIndex = -1;
+  state.selectedUnitId = null;
+}
+
+// ═══════════════════════════════════════════
+// SECTION 2c: OMAHA BEACH SCENARIO
+// ═══════════════════════════════════════════
+
+function generateOmahaMap() {
+  const map = [];
+  for (let c = 0; c < 30; c++) {
+    map[c] = [];
+    for (let r = 0; r < 20; r++) {
+      // Default by row band
+      if (r >= 17) map[c][r] = T.BEACH;         // Rows 17-19: tidal flat / surf zone
+      else if (r === 16) map[c][r] = T.BEACH;    // Row 16: upper beach
+      else if (r === 15) map[c][r] = T.BEACH;    // Row 15: shingle line
+      else if (r >= 12 && r <= 14) map[c][r] = T.BLUFF;  // Rows 12-14: bluffs
+      else if (r >= 9 && r <= 11) map[c][r] = T.BLUFF;   // Rows 9-11: bluff top
+      else if (r >= 6 && r <= 8) map[c][r] = T.CLEAR;    // Rows 6-8: behind bluffs
+      else if (r >= 3 && r <= 5) map[c][r] = T.CLEAR;    // Rows 3-5: hedgerow country
+      else map[c][r] = T.CLEAR;                           // Rows 0-2: deep inland
+    }
+  }
+
+  // Draw exits (roads cutting through bluffs) at the 5 draws
+  const draws = [[3,4],[10,11],[16,17],[22,23],[28,29]];
+  for (const [c1, c2] of draws) {
+    for (let r = 12; r <= 15; r++) {
+      map[c1][r] = T.ROAD;
+      map[c2][r] = T.ROAD;
+    }
+    // Connect road to beach at row 15
+    map[c1][15] = T.ROAD;
+    map[c2][15] = T.ROAD;
+  }
+
+  // Inland road (coastal highway) at row 7
+  for (let c = 0; c < 30; c++) {
+    map[c][7] = T.ROAD;
+  }
+
+  // Connect draws to coastal road (north-south road segments)
+  for (const [c1, c2] of draws) {
+    for (let r = 7; r <= 12; r++) {
+      map[c1][r] = T.ROAD;
+      map[c2][r] = T.ROAD;
+    }
+  }
+
+  // WN Fortification positions along bluff crest (rows 10-11)
+  // WN-73/72 (Vierville): cols 3-5
+  const fortHexes = [
+    [3,10],[4,10],[5,10],[3,11],[4,11],
+    // WN-70/68 (Dog White): cols 7-8
+    [7,10],[8,10],
+    // WN-66 (Les Moulins): cols 10-11
+    [10,10],[11,10],
+    // WN-65/64 (St-Laurent): cols 15-17
+    [15,10],[16,10],[17,10],
+    // WN-62 (Colleville, strongest): cols 22-23
+    [22,10],[23,10],[22,11],[23,11],
+    // WN-61/60 (East Colleville): cols 25-27
+    [25,10],[26,10],[27,10],
+  ];
+  for (const [c, r] of fortHexes) {
+    map[c][r] = T.FORTIFICATION;
+  }
+
+  // Town hexes
+  // Vierville-sur-Mer: cols 3-5, rows 6-7
+  const towns = [
+    [3,6],[4,6],[5,6],[3,7],[4,7],[5,7],
+    // St-Laurent-sur-Mer: cols 15-17, rows 6-7
+    [15,6],[16,6],[17,6],[15,7],[16,7],[17,7],
+    // Colleville-sur-Mer: cols 22-24, rows 6-7
+    [22,6],[23,6],[24,6],[22,7],[23,7],[24,7],
+  ];
+  for (const [c, r] of towns) {
+    map[c][r] = T.TOWN;
+  }
+
+  // Bocage behind villages (rows 3-5)
+  const bocage = [
+    [2,3],[3,3],[4,3],[5,3],[6,3],
+    [1,4],[2,4],[6,4],[7,4],
+    [14,3],[15,3],[16,3],[17,3],[18,3],
+    [13,4],[14,4],[18,4],[19,4],
+    [21,3],[22,3],[23,3],[24,3],[25,3],
+    [20,4],[21,4],[25,4],[26,4],
+  ];
+  for (const [c, r] of bocage) {
+    map[c][r] = T.BOCAGE;
+  }
+
+  // Woods inland (rows 0-2)
+  const woods = [
+    [1,0],[2,0],[3,0],[1,1],[2,1],
+    [8,0],[9,0],[8,1],[9,1],[10,1],
+    [14,0],[15,0],[14,1],[15,1],
+    [20,0],[21,0],[20,1],[21,1],[22,1],
+    [27,0],[28,0],[27,1],[28,1],[29,1],
+    [5,1],[5,2],[6,2],
+    [12,1],[12,2],[13,2],
+    [24,1],[24,2],[25,2],
+  ];
+  for (const [c, r] of woods) {
+    map[c][r] = T.WOODS;
+  }
+
+  // Some hills on bluff edges
+  const hills = [
+    [0,9],[1,9],[2,9],
+    [13,9],[14,9],
+    [19,9],[20,9],[21,9],
+    [28,9],[29,9],
+  ];
+  for (const [c, r] of hills) {
+    if (map[c][r] !== T.ROAD && map[c][r] !== T.FORTIFICATION) {
+      map[c][r] = T.HILL;
+    }
+  }
+
+  return map;
+}
+
+function loadOmahaScenario() {
+  MAP_COLS = 30;
+  MAP_ROWS = 20;
+  state.map = generateOmahaMap();
+  state.units = [];
+  state.turn = 1;
+  state.activeSide = GERMAN;
+  state.phase = PHASE_PLACEMENT;
+  nextUnitId = 1;
+
+  // Build German placement zones — narrow areas around each WN
+  const germanZone = new Set();
+  // WN-72/73 zone (Vierville, cols 2-6, rows 9-12)
+  for (let c = 2; c <= 6; c++) for (let r = 9; r <= 12; r++) germanZone.add(hexKey(c, r));
+  // WN-70/68 zone (Dog White, cols 6-9, rows 9-12)
+  for (let c = 6; c <= 9; c++) for (let r = 9; r <= 12; r++) germanZone.add(hexKey(c, r));
+  // WN-66 zone (Les Moulins, cols 9-12, rows 9-12)
+  for (let c = 9; c <= 12; c++) for (let r = 9; r <= 12; r++) germanZone.add(hexKey(c, r));
+  // WN-65/64 zone (St-Laurent, cols 14-18, rows 9-12)
+  for (let c = 14; c <= 18; c++) for (let r = 9; r <= 12; r++) germanZone.add(hexKey(c, r));
+  // WN-62 zone (Colleville, cols 21-25, rows 9-12)
+  for (let c = 21; c <= 25; c++) for (let r = 9; r <= 12; r++) germanZone.add(hexKey(c, r));
+  // WN-61/60 zone (East Colleville, cols 25-29, rows 9-12)
+  for (let c = 25; c <= 29; c++) for (let r = 9; r <= 12; r++) germanZone.add(hexKey(c, r));
+  // Mortar positions (behind bluffs, cols 5-25, rows 7-9)
+  for (let c = 5; c <= 25; c++) for (let r = 7; r <= 9; r++) germanZone.add(hexKey(c, r));
+
+  // American placement zone: beach rows 16-19
+  const alliedZone = new Set();
+  for (let c = 0; c < 30; c++) {
+    for (let r = 16; r <= 19; r++) {
+      alliedZone.add(hexKey(c, r));
+    }
+  }
+
+  state.placementZones = { [ALLIED]: alliedZone, [GERMAN]: germanZone };
+  state.placementOrder = [GERMAN, ALLIED];
+
+  const scenarioUnits = [
+    // ── German Initial (availableTurn: 0) ──
+    // WN-72/73 (Vierville)
+    { type: 'ge_mg42_bunker', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_mg42_bunker', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_88mm_case',   side: GERMAN, availableTurn: 0 },
+    { type: 'ge_75mm_case',   side: GERMAN, availableTurn: 0 },
+    { type: 'ge_wn_garrison', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_tobruk',      side: GERMAN, availableTurn: 0 },
+    // WN-70/68 (Dog White)
+    { type: 'ge_mg42_bunker', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_mg42_bunker', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_50mm_at',     side: GERMAN, availableTurn: 0 },
+    { type: 'ge_wn_garrison', side: GERMAN, availableTurn: 0 },
+    // WN-66 (Les Moulins)
+    { type: 'ge_mg42_bunker', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_mg42_bunker', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_75mm_case',   side: GERMAN, availableTurn: 0 },
+    { type: 'ge_50mm_at',     side: GERMAN, availableTurn: 0 },
+    { type: 'ge_wn_garrison', side: GERMAN, availableTurn: 0 },
+    // WN-65/64 (St-Laurent)
+    { type: 'ge_mg42_bunker', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_mg42_bunker', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_75mm_case',   side: GERMAN, availableTurn: 0 },
+    { type: 'ge_50mm_at',     side: GERMAN, availableTurn: 0 },
+    { type: 'ge_wn_garrison', side: GERMAN, availableTurn: 0 },
+    // WN-62 (Colleville — strongest)
+    { type: 'ge_mg42_bunker', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_mg42_bunker', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_mg42_bunker', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_88mm_case',   side: GERMAN, availableTurn: 0 },
+    { type: 'ge_75mm_case',   side: GERMAN, availableTurn: 0 },
+    { type: 'ge_50mm_at',     side: GERMAN, availableTurn: 0 },
+    { type: 'ge_50mm_at',     side: GERMAN, availableTurn: 0 },
+    { type: 'ge_wn_garrison', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_tobruk',      side: GERMAN, availableTurn: 0 },
+    // WN-61/60 (East Colleville)
+    { type: 'ge_mg42_bunker', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_mg42_bunker', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_75mm_case',   side: GERMAN, availableTurn: 0 },
+    { type: 'ge_wn_garrison', side: GERMAN, availableTurn: 0 },
+    // Mortar positions
+    { type: 'ge_81mm_mortar', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_81mm_mortar', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_81mm_mortar', side: GERMAN, availableTurn: 0 },
+
+    // ── German Reinforcements Turn 4 ──
+    { type: 'ge_352_reserve', side: GERMAN, availableTurn: 4 },
+    { type: 'ge_352_reserve', side: GERMAN, availableTurn: 4 },
+    { type: 'ge_352_reserve', side: GERMAN, availableTurn: 4 },
+
+    // ── American First Wave (availableTurn: 0) ──
+    { type: 'us_116_inf',     side: ALLIED, availableTurn: 0 },
+    { type: 'us_116_inf',     side: ALLIED, availableTurn: 0 },
+    { type: 'us_116_inf',     side: ALLIED, availableTurn: 0 },
+    { type: 'us_16_inf',      side: ALLIED, availableTurn: 0 },
+    { type: 'us_16_inf',      side: ALLIED, availableTurn: 0 },
+    { type: 'us_16_inf',      side: ALLIED, availableTurn: 0 },
+    { type: 'us_2ranger',     side: ALLIED, availableTurn: 0 },
+    { type: 'us_743_sherman', side: ALLIED, availableTurn: 0 },
+    { type: 'us_743_sherman', side: ALLIED, availableTurn: 0 },
+    { type: 'us_743_sherman', side: ALLIED, availableTurn: 0 },
+    { type: 'us_741_sherman', side: ALLIED, availableTurn: 0 },
+    { type: 'us_engineer',    side: ALLIED, availableTurn: 0 },
+    { type: 'us_engineer',    side: ALLIED, availableTurn: 0 },
+
+    // ── American Second Wave — Turn 2 ──
+    { type: 'us_116_inf',     side: ALLIED, availableTurn: 2 },
+    { type: 'us_116_inf',     side: ALLIED, availableTurn: 2 },
+    { type: 'us_116_inf',     side: ALLIED, availableTurn: 2 },
+    { type: 'us_16_inf',      side: ALLIED, availableTurn: 2 },
+    { type: 'us_16_inf',      side: ALLIED, availableTurn: 2 },
+    { type: 'us_5ranger',     side: ALLIED, availableTurn: 2 },
+    { type: 'us_engineer',    side: ALLIED, availableTurn: 2 },
+
+    // ── American Third Wave — Turn 3 ──
+    { type: 'us_16_inf',      side: ALLIED, availableTurn: 3 },
+    { type: 'us_16_inf',      side: ALLIED, availableTurn: 3 },
+    { type: 'us_743_sherman', side: ALLIED, availableTurn: 3 },
+
+    // ── American Fourth Wave — Turn 4 ──
+    { type: 'us_18_inf',      side: ALLIED, availableTurn: 4 },
+    { type: 'us_18_inf',      side: ALLIED, availableTurn: 4 },
+    { type: 'us_18_inf',      side: ALLIED, availableTurn: 4 },
+    { type: 'us_105mm',       side: ALLIED, availableTurn: 4 },
+    { type: 'us_priest',      side: ALLIED, availableTurn: 4 },
+  ];
+
+  // German places first in Omaha, so German initial goes to rack, rest to reinforcements
+  state.rack = [];
+  state.allReinforcements = [];
+  for (const entry of scenarioUnits) {
+    if (entry.availableTurn === 0) {
+      if (entry.side === GERMAN) {
+        state.rack.push({ type: entry.type, side: entry.side });
+      } else {
+        // Allied initial units go to reinforcements pool, loaded when Allied placement starts
+        state.allReinforcements.push(entry);
+      }
+    } else {
+      state.allReinforcements.push(entry);
+    }
+  }
+
+  state.selectedRackIndex = -1;
+  state.selectedUnitId = null;
+}
+
+// Populate rack for a given side from reinforcements pool for a given turn
+function loadRackForSide(side, turn) {
+  state.rack = [];
+  const toLoad = [];
+  const remaining = [];
+  for (const entry of state.allReinforcements) {
+    if (entry.side === side && entry.availableTurn === turn) {
+      toLoad.push(entry);
+    } else {
+      remaining.push(entry);
+    }
+  }
+  state.allReinforcements = remaining;
+  for (const entry of toLoad) {
+    state.rack.push({ type: entry.type, side: entry.side });
+  }
+  state.selectedRackIndex = -1;
+}
+
+// ═══════════════════════════════════════════
+// SECTION 3: HEX MATH
+// ═══════════════════════════════════════════
+
+function hexToPixel(col, row) {
+  const x = col * HEX_W * 0.75 + HEX_SIZE * Math.sqrt(3) / 2 + 20;
+  const y = row * HEX_H * 0.75 + HEX_SIZE + 20;
+  if (col % 2 === 1) {
+    return { x, y: y + HEX_H * 0.375 };
+  }
+  return { x, y };
+}
+
+function pixelToHex(px, py) {
+  let bestCol = 0, bestRow = 0, bestDist = Infinity;
+  for (let c = 0; c < MAP_COLS; c++) {
+    for (let r = 0; r < MAP_ROWS; r++) {
+      const { x, y } = hexToPixel(c, r);
+      const d = (px - x) * (px - x) + (py - y) * (py - y);
+      if (d < bestDist) {
+        bestDist = d;
+        bestCol = c;
+        bestRow = r;
+      }
+    }
+  }
+  if (bestDist < HEX_SIZE * HEX_SIZE * 1.5) {
+    return { col: bestCol, row: bestRow };
+  }
+  return null;
+}
+
+function hexNeighbors(col, row) {
+  const parity = col & 1;
+  const dirs = parity
+    ? [[+1, 0],[+1,+1],[ 0,+1],[-1,+1],[-1, 0],[ 0,-1]]
+    : [[+1,-1],[+1, 0],[ 0,+1],[-1, 0],[-1,-1],[ 0,-1]];
+  const results = [];
+  for (const [dc, dr] of dirs) {
+    const nc = col + dc, nr = row + dr;
+    if (nc >= 0 && nc < MAP_COLS && nr >= 0 && nr < MAP_ROWS) {
+      results.push({ col: nc, row: nr });
+    }
+  }
+  return results;
+}
+
+function hexDistance(c1, r1, c2, r2) {
+  function toCube(col, row) {
+    const x = col;
+    const z = row - (col - (col & 1)) / 2;
+    const y = -x - z;
+    return { x, y, z };
+  }
+  const a = toCube(c1, r1);
+  const b = toCube(c2, r2);
+  return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y), Math.abs(a.z - b.z));
+}
+
+function hexKey(col, row) { return col + ',' + row; }
+
+function findReachable(unit) {
+  const utype = UNIT_TYPES[unit.type];
+  const isVehicle = utype.class === ARM || utype.class === MECH || utype.class === RECON || utype.class === ART;
+  const maxMP = utype.mp;
+  const reachable = new Map();
+  const startKey = hexKey(unit.col, unit.row);
+  reachable.set(startKey, maxMP);
+
+  const queue = [{ col: unit.col, row: unit.row, mp: maxMP }];
+  while (queue.length > 0) {
+    const cur = queue.shift();
+    const neighbors = hexNeighbors(cur.col, cur.row);
+    for (const n of neighbors) {
+      const terrain = state.map[n.col][n.row];
+      const cost = isVehicle ? TERRAIN_INFO[terrain].moveCostVeh : TERRAIN_INFO[terrain].moveCostInf;
+      const remaining = cur.mp - cost;
+      if (remaining < 0) continue;
+      const nk = hexKey(n.col, n.row);
+      if (reachable.has(nk) && reachable.get(nk) >= remaining) continue;
+      const unitsInHex = getUnitsAt(n.col, n.row);
+      const friendlyCount = unitsInHex.filter(u => u.side === unit.side).length;
+      const enemyPresent = unitsInHex.some(u => u.side !== unit.side);
+      if (enemyPresent) continue;
+      if (friendlyCount >= STACK_LIMIT) continue;
+      reachable.set(nk, remaining);
+      queue.push({ col: n.col, row: n.row, mp: remaining });
+    }
+  }
+  reachable.delete(startKey);
+  return reachable;
+}
+
+function hasLOS(c1, r1, c2, r2) {
+  if (c1 === c2 && r1 === r2) return true;
+  const dist = hexDistance(c1, r1, c2, r2);
+  if (dist <= 1) return true;
+
+  const p1 = hexToPixel(c1, r1);
+  const p2 = hexToPixel(c2, r2);
+  const steps = dist;
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    const mx = p1.x + (p2.x - p1.x) * t;
+    const my = p1.y + (p2.y - p1.y) * t;
+    const hex = pixelToHex(mx, my);
+    if (!hex) continue;
+    if (hex.col === c1 && hex.row === r1) continue;
+    if (hex.col === c2 && hex.row === r2) continue;
+    const terrain = state.map[hex.col][hex.row];
+    if (TERRAIN_INFO[terrain].blockLOS) return false;
+  }
+  return true;
+}
+
+// ═══════════════════════════════════════════
+// SECTION 4: MAP RENDERING
+// ═══════════════════════════════════════════
+
+const canvas = document.getElementById('map');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+  const container = document.getElementById('map-container');
+  const rackEl = document.getElementById('rack-container');
+  const rackH = rackEl.classList.contains('visible') ? rackEl.offsetHeight : 0;
+  const availH = container.clientHeight - rackH;
+  canvas.width = container.clientWidth * devicePixelRatio;
+  canvas.height = availH * devicePixelRatio;
+  canvas.style.width = container.clientWidth + 'px';
+  canvas.style.height = availH + 'px';
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+}
+
+function drawHex(cx, cy, size, fillColor, strokeColor) {
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const angle = Math.PI / 180 * (60 * i - 30);
+    const x = cx + size * Math.cos(angle);
+    const y = cy + size * Math.sin(angle);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = fillColor;
+  ctx.fill();
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 0.5;
+  ctx.stroke();
+}
+
+function drawRoadSegment(c1, r1, c2, r2) {
+  const p1 = hexToPixel(c1, r1);
+  const p2 = hexToPixel(c2, r2);
+  ctx.beginPath();
+  ctx.moveTo(p1.x, p1.y);
+  ctx.lineTo(p2.x, p2.y);
+  ctx.strokeStyle = '#c8b888';
+  ctx.lineWidth = 4;
+  ctx.stroke();
+}
+
+function drawMap() {
+  for (let c = 0; c < MAP_COLS; c++) {
+    for (let r = 0; r < MAP_ROWS; r++) {
+      const { x, y } = hexToPixel(c, r);
+      const terrain = state.map[c][r];
+      drawHex(x, y, HEX_SIZE, TERRAIN_INFO[terrain].color, '#3a3a3a');
+
+      if (terrain === T.TOWN) {
+        ctx.fillStyle = '#5a4a3a';
+        ctx.fillRect(x - 6, y - 4, 12, 8);
+        ctx.fillStyle = '#8a7a6a';
+        ctx.fillRect(x - 4, y - 6, 8, 4);
+      }
+      if (terrain === T.BOCAGE) {
+        ctx.fillStyle = '#2a4a1a';
+        for (let i = 0; i < 3; i++) {
+          ctx.beginPath();
+          ctx.arc(x - 6 + i * 6, y - 2, 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      if (terrain === T.BEACH) {
+        ctx.fillStyle = 'rgba(160,140,80,0.4)';
+        for (let i = 0; i < 5; i++) {
+          ctx.beginPath();
+          ctx.arc(x - 8 + i * 4, y + (i % 2 === 0 ? -3 : 3), 1.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.strokeStyle = 'rgba(100,90,50,0.3)';
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(x - 10, y + 6);
+        ctx.quadraticCurveTo(x - 3, y + 3, x + 4, y + 6);
+        ctx.quadraticCurveTo(x + 8, y + 8, x + 12, y + 5);
+        ctx.stroke();
+      }
+      if (terrain === T.BLUFF) {
+        ctx.strokeStyle = 'rgba(40,40,20,0.5)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 4; i++) {
+          ctx.beginPath();
+          ctx.moveTo(x - 8 + i * 5, y - 8);
+          ctx.lineTo(x - 4 + i * 5, y + 8);
+          ctx.stroke();
+        }
+      }
+      if (terrain === T.FORTIFICATION) {
+        ctx.fillStyle = '#3a3a3a';
+        ctx.fillRect(x - 7, y - 4, 14, 8);
+        ctx.fillStyle = '#777';
+        ctx.fillRect(x - 5, y - 6, 4, 4);
+        ctx.strokeStyle = '#444';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x - 7, y - 4, 14, 8);
+      }
+    }
+  }
+
+  for (let c = 0; c < MAP_COLS; c++) {
+    for (let r = 0; r < MAP_ROWS; r++) {
+      if (state.map[c][r] === T.ROAD) {
+        const neighbors = hexNeighbors(c, r);
+        for (const n of neighbors) {
+          if (state.map[n.col][n.row] === T.ROAD || state.map[n.col][n.row] === T.TOWN) {
+            if (n.col > c || (n.col === c && n.row > r)) {
+              drawRoadSegment(c, r, n.col, n.row);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Coordinate labels
+  ctx.font = '8px Courier New';
+  ctx.fillStyle = 'rgba(255,255,255,0.15)';
+  ctx.textAlign = 'center';
+  for (let c = 0; c < MAP_COLS; c++) {
+    for (let r = 0; r < MAP_ROWS; r++) {
+      const { x, y } = hexToPixel(c, r);
+      ctx.fillText(c + ',' + r, x, y + HEX_SIZE - 4);
+    }
+  }
+}
+
+function drawOverlays() {
+  const isPlacing = state.phase === PHASE_PLACEMENT || state.phase === PHASE_REINFORCEMENT;
+
+  // Placement phase: dim hexes outside the placement zone
+  if (isPlacing && state.placementZones) {
+    const zones = state.placementZones[state.activeSide];
+    if (zones) {
+      for (let c = 0; c < MAP_COLS; c++) {
+        for (let r = 0; r < MAP_ROWS; r++) {
+          const key = hexKey(c, r);
+          const { x, y } = hexToPixel(c, r);
+          if (!zones.has(key)) {
+            // Subtle dark overlay on non-placeable hexes
+            drawHex(x, y, HEX_SIZE, 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0)');
+          }
+        }
+      }
+      // Subtle tinted border on zone hexes
+      const isAllied = state.activeSide === ALLIED;
+      const strokeColor = isAllied ? 'rgba(100,180,80,0.25)' : 'rgba(180,180,180,0.2)';
+      zones.forEach(key => {
+        const [c, r] = key.split(',').map(Number);
+        const { x, y } = hexToPixel(c, r);
+        drawHex(x, y, HEX_SIZE - 1, 'rgba(0,0,0,0)', strokeColor);
+      });
+    }
+  }
+
+  // Drag hover hex highlight during placement
+  if (isPlacing && state.hoverHex) {
+    const { col, row } = state.hoverHex;
+    const { x, y } = hexToPixel(col, row);
+    const zones = state.placementZones[state.activeSide];
+    const key = hexKey(col, row);
+    const valid = zones && zones.has(key) && canPlaceAtHex(col, row, state.activeSide);
+    const color = valid ? 'rgba(100,255,100,0.4)' : 'rgba(255,60,60,0.3)';
+    const stroke = valid ? 'rgba(100,255,100,0.8)' : 'rgba(255,60,60,0.6)';
+    drawHex(x, y, HEX_SIZE - 1, color, stroke);
+  }
+
+  // Mouse hover hex outline (subtle, always active)
+  if (state.mouseHex) {
+    const { col, row } = state.mouseHex;
+    const { x, y } = hexToPixel(col, row);
+    ctx.lineWidth = 1.5;
+    drawHex(x, y, HEX_SIZE - 1, 'rgba(0,0,0,0)', 'rgba(255,255,255,0.25)');
+  }
+
+  // Movement range overlay
+  if (state.moveMode && state.reachableHexes) {
+    state.reachableHexes.forEach((mp, key) => {
+      const [c, r] = key.split(',').map(Number);
+      const { x, y } = hexToPixel(c, r);
+      drawHex(x, y, HEX_SIZE - 2, 'rgba(100,200,100,0.3)', 'rgba(100,200,100,0.7)');
+    });
+  }
+
+  // Fire target overlay
+  if (state.fireMode && state.targetableHexes) {
+    state.targetableHexes.forEach(key => {
+      const [c, r] = key.split(',').map(Number);
+      const { x, y } = hexToPixel(c, r);
+      drawHex(x, y, HEX_SIZE - 2, 'rgba(200,80,80,0.3)', 'rgba(200,80,80,0.8)');
+    });
+  }
+
+  // Selected hex highlight (for placed units)
+  const sel = getSelectedUnit();
+  if (sel) {
+    const { x, y } = hexToPixel(sel.col, sel.row);
+    drawHex(x, y, HEX_SIZE - 1, 'rgba(255,255,100,0.2)', 'rgba(255,255,100,0.9)');
+    ctx.lineWidth = 2;
+    drawHex(x, y, HEX_SIZE - 1, 'rgba(0,0,0,0)', 'rgba(255,255,100,0.9)');
+  }
+}
+
+function drawUnitCounter(ux, uy, u, utype) {
+  const w = 28, h = 20;
+  const isGerman = u.side === GERMAN;
+  let bgColor = isGerman ? '#5a5a5a' : '#4a6a3a';
+  let textColor = isGerman ? '#ddd' : '#dfd';
+  let borderColor = isGerman ? '#888' : '#6a8a5a';
+
+  if (u.fired) {
+    bgColor = isGerman ? '#3a3a3a' : '#2a4a2a';
+    borderColor = '#d44';
+  }
+  if (u.moved) {
+    borderColor = '#88f';
+  }
+  if (u.id === state.selectedUnitId) {
+    borderColor = '#ff0';
+  }
+
+  ctx.fillStyle = bgColor;
+  ctx.fillRect(ux - w/2, uy - h/2, w, h);
+  ctx.strokeStyle = borderColor;
+  ctx.lineWidth = u.id === state.selectedUnitId ? 2 : 1;
+  ctx.strokeRect(ux - w/2, uy - h/2, w, h);
+
+  ctx.font = 'bold 8px Courier New';
+  ctx.fillStyle = textColor;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText(utype.name.substring(0, 5), ux, uy - h/2 + 1);
+
+  ctx.font = '7px Courier New';
+  ctx.fillText(utype.at + '/' + utype.df, ux, uy + 2);
+
+  if (utype.armored) {
+    ctx.strokeStyle = textColor;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.ellipse(ux, uy, w/2 - 1, h/2 - 1, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+function drawUnits() {
+  const hexGroups = new Map();
+  for (const u of state.units) {
+    if (u.destroyed || !u.placed) continue;
+    const k = hexKey(u.col, u.row);
+    if (!hexGroups.has(k)) hexGroups.set(k, []);
+    hexGroups.get(k).push(u);
+  }
+
+  hexGroups.forEach((units, key) => {
+    const [c, r] = key.split(',').map(Number);
+    const { x, y } = hexToPixel(c, r);
+    const count = units.length;
+
+    for (let i = 0; i < count; i++) {
+      const u = units[i];
+      const utype = UNIT_TYPES[u.type];
+      const ox = (i - (count - 1) / 2) * 3;
+      const oy = (i - (count - 1) / 2) * 3;
+      drawUnitCounter(x + ox, y + oy, u, utype);
+    }
+
+    if (count > 1) {
+      ctx.font = 'bold 8px Courier New';
+      ctx.fillStyle = '#ff0';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'top';
+      ctx.fillText('×' + count, x + 16, y - 14);
+    }
+  });
+}
+
+function render() {
+  ctx.clearRect(0, 0, canvas.width / devicePixelRatio, canvas.height / devicePixelRatio);
+  drawMap();
+  drawOverlays();
+  drawUnits();
+  requestAnimationFrame(render);
+}
+
+// ═══════════════════════════════════════════
+// SECTION 5: GAME LOGIC
+// ═══════════════════════════════════════════
+
+function getUnitsAt(col, row) {
+  return state.units.filter(u => u.col === col && u.row === row && !u.destroyed && u.placed);
+}
+
+function getSelectedUnit() {
+  if (!state.selectedUnitId) return null;
+  return state.units.find(u => u.id === state.selectedUnitId && !u.destroyed && u.placed) || null;
+}
+
+function selectUnit(unit) {
+  state.selectedUnitId = unit ? unit.id : null;
+  state.selectedRackIndex = -1;
+  state.moveMode = false;
+  state.fireMode = false;
+  state.reachableHexes = null;
+  state.targetableHexes = null;
+  updateUI();
+}
+
+function selectRackUnit(index) {
+  state.selectedRackIndex = index;
+  state.selectedUnitId = null;
+  state.moveMode = false;
+  state.fireMode = false;
+  state.reachableHexes = null;
+  state.targetableHexes = null;
+  updateUI();
+}
+
+function canPlaceAtHex(col, row, side) {
+  const unitsHere = getUnitsAt(col, row);
+  if (unitsHere.length >= STACK_LIMIT) return false;
+  if (unitsHere.some(u => u.side !== side)) return false;
+  return true;
+}
+
+function placeUnitFromRack(rackIndex, col, row) {
+  const isPlacing = state.phase === PHASE_PLACEMENT || state.phase === PHASE_REINFORCEMENT;
+  if (!isPlacing) return false;
+  if (rackIndex < 0 || rackIndex >= state.rack.length) return false;
+
+  const zones = state.placementZones[state.activeSide];
+  const key = hexKey(col, row);
+  if (!zones || !zones.has(key)) return false;
+  if (!canPlaceAtHex(col, row, state.activeSide)) return false;
+
+  const entry = state.rack[rackIndex];
+  const unit = createUnit(entry.type, col, row);
+  state.units.push(unit);
+  state.rack.splice(rackIndex, 1);
+
+  const utype = UNIT_TYPES[entry.type];
+  addLog(`${utype.name} placed at (${col},${row})`, 'log-place');
+
+  state.selectedRackIndex = -1;
+  state.selectedUnitId = null;
+  renderRack();
+  updateUI();
+  return true;
+}
+
+function returnUnitToRack(unit) {
+  const isPlacing = state.phase === PHASE_PLACEMENT || state.phase === PHASE_REINFORCEMENT;
+  if (!isPlacing) return;
+  if (unit.side !== state.activeSide) return;
+
+  state.rack.push({ type: unit.type, side: unit.side });
+  // Remove from units array
+  unit.destroyed = true;
+  unit.placed = false;
+  state.selectedUnitId = null;
+
+  const utype = UNIT_TYPES[unit.type];
+  addLog(`${utype.name} returned to rack`, 'log-place');
+
+  renderRack();
+  updateUI();
+}
+
+function enterMoveMode() {
+  const unit = getSelectedUnit();
+  if (!unit || unit.side !== state.activeSide) return;
+  if (state.phase !== PHASE_MOVEMENT) return;
+  if (unit.moved || unit.fired) return;
+
+  state.moveMode = true;
+  state.fireMode = false;
+  state.reachableHexes = findReachable(unit);
+  state.targetableHexes = null;
+  updateUI();
+}
+
+function enterFireMode() {
+  const unit = getSelectedUnit();
+  if (!unit || unit.side !== state.activeSide) return;
+  if (state.phase !== PHASE_COMBAT) return;
+  if (unit.fired || unit.moved) return;
+
+  const utype = UNIT_TYPES[unit.type];
+  if (utype.at === 0 && utype.ap === 0) return;
+
+  state.fireMode = true;
+  state.moveMode = false;
+  state.reachableHexes = null;
+
+  const targets = new Set();
+  for (const enemy of state.units) {
+    if (enemy.destroyed || !enemy.placed || enemy.side === unit.side) continue;
+    const dist = hexDistance(unit.col, unit.row, enemy.col, enemy.row);
+    if (dist <= utype.range && dist > 0 && hasLOS(unit.col, unit.row, enemy.col, enemy.row)) {
+      targets.add(hexKey(enemy.col, enemy.row));
+    }
+  }
+  state.targetableHexes = targets;
+  updateUI();
+}
+
+function executeMove(unit, destCol, destRow) {
+  const from = `(${unit.col},${unit.row})`;
+  unit.col = destCol;
+  unit.row = destRow;
+  unit.moved = true;
+  state.moveMode = false;
+  state.reachableHexes = null;
+  addLog(`${UNIT_TYPES[unit.type].name} moves from ${from} to (${destCol},${destRow})`, 'log-move');
+  updateUI();
+}
+
+function executeFire(attacker, targetCol, targetRow) {
+  const atype = UNIT_TYPES[attacker.type];
+  const defenders = getUnitsAt(targetCol, targetRow).filter(u => u.side !== attacker.side);
+  if (defenders.length === 0) return;
+
+  const defender = defenders.reduce((best, u) => {
+    const df = UNIT_TYPES[u.type].df * (TERRAIN_INFO[state.map[u.col][u.row]].dfMod);
+    const bestDf = UNIT_TYPES[best.type].df * (TERRAIN_INFO[state.map[best.col][best.row]].dfMod);
+    return df > bestDf ? u : best;
+  });
+  const dtype = UNIT_TYPES[defender.type];
+
+  const attackFactor = dtype.armored ? atype.at : atype.ap;
+  if (attackFactor <= 0) {
+    addLog(`${atype.name} has no effective attack against ${dtype.name}!`, 'log-combat');
+    return;
+  }
+
+  const terrainMod = TERRAIN_INFO[state.map[defender.col][defender.row]].dfMod;
+  const defenseFactor = dtype.df * terrainMod;
+  let ratio = attackFactor / defenseFactor;
+
+  let crtCol;
+  if (ratio < 0.34) crtCol = '1:4';
+  else if (ratio < 0.5) crtCol = '1:3';
+  else if (ratio < 1.0) crtCol = '1:2';
+  else if (ratio < 2.0) crtCol = '1:1';
+  else if (ratio < 3.0) crtCol = '2:1';
+  else if (ratio < 4.0) crtCol = '3:1';
+  else if (ratio < 5.0) crtCol = '4:1';
+  else if (ratio < 6.0) crtCol = '5:1';
+  else crtCol = '6:1';
+
+  const roll = Math.floor(Math.random() * 6);
+  const result = CRT[crtCol][roll];
+  const dieDisplay = roll + 1;
+
+  attacker.fired = true;
+  state.fireMode = false;
+  state.targetableHexes = null;
+
+  const terrainName = TERRAIN_INFO[state.map[defender.col][defender.row]].name;
+  addLog(
+    `${atype.name} fires at ${dtype.name} — ${attackFactor} vs ${dtype.df}×${terrainMod}(${terrainName})=${defenseFactor} — ${crtCol} odds — die:${dieDisplay} → ${result}`,
+    'log-combat'
+  );
+
+  applyCombatResult(result, attacker, defender);
+  updateUI();
+}
+
+function applyCombatResult(result, attacker, defender) {
+  switch (result) {
+    case 'DE':
+      defender.destroyed = true;
+      addLog(`  ${UNIT_TYPES[defender.type].name} ELIMINATED!`, 'log-result');
+      break;
+    case 'DR': {
+      const retreated = retreatUnit(defender, attacker);
+      if (!retreated) {
+        defender.destroyed = true;
+        addLog(`  ${UNIT_TYPES[defender.type].name} cannot retreat — ELIMINATED!`, 'log-result');
+      } else {
+        addLog(`  ${UNIT_TYPES[defender.type].name} retreats to (${defender.col},${defender.row})`, 'log-result');
+      }
+      break;
+    }
+    case 'EX':
+      attacker.destroyed = true;
+      defender.destroyed = true;
+      addLog(`  EXCHANGE — both ${UNIT_TYPES[attacker.type].name} and ${UNIT_TYPES[defender.type].name} eliminated!`, 'log-result');
+      break;
+    case 'AR': {
+      const retreated = retreatUnit(attacker, defender);
+      if (!retreated) {
+        attacker.destroyed = true;
+        addLog(`  ${UNIT_TYPES[attacker.type].name} cannot retreat — ELIMINATED!`, 'log-result');
+      } else {
+        addLog(`  ${UNIT_TYPES[attacker.type].name} retreats to (${attacker.col},${attacker.row})`, 'log-result');
+      }
+      break;
+    }
+    case 'AE':
+      attacker.destroyed = true;
+      addLog(`  ${UNIT_TYPES[attacker.type].name} ELIMINATED!`, 'log-result');
+      break;
+  }
+
+  if (attacker.destroyed && attacker.id === state.selectedUnitId) {
+    selectUnit(null);
+  }
+}
+
+function retreatUnit(unit, awayFrom) {
+  const neighbors = hexNeighbors(unit.col, unit.row);
+  let best = null, bestDist = -1;
+  for (const n of neighbors) {
+    const dist = hexDistance(n.col, n.row, awayFrom.col, awayFrom.row);
+    const unitsHere = getUnitsAt(n.col, n.row);
+    const enemyPresent = unitsHere.some(u => u.side !== unit.side);
+    const friendlyCount = unitsHere.filter(u => u.side === unit.side).length;
+    if (enemyPresent || friendlyCount >= STACK_LIMIT) continue;
+    if (dist > bestDist) {
+      bestDist = dist;
+      best = n;
+    }
+  }
+  if (best) {
+    unit.col = best.col;
+    unit.row = best.row;
+    return true;
+  }
+  return false;
+}
+
+function checkReinforcements(side) {
+  // Check if there are reinforcements for this side on this turn
+  return state.allReinforcements.some(e => e.side === side && e.availableTurn === state.turn);
+}
+
+function advancePhase() {
+  selectUnit(null);
+  state.selectedRackIndex = -1;
+  const isPlacing = state.phase === PHASE_PLACEMENT || state.phase === PHASE_REINFORCEMENT;
+
+  if (isPlacing) {
+    // Discard any unplaced rack units (player chose to skip them)
+    if (state.rack.length > 0) {
+      addLog(`  ${state.rack.length} unit(s) not placed — skipped.`, 'log-place');
+      state.rack = [];
+    }
+
+    if (state.phase === PHASE_PLACEMENT) {
+      const firstSide = state.placementOrder[0];
+      const secondSide = state.placementOrder[1];
+      if (state.activeSide === firstSide) {
+        // Switch to second side placement
+        state.activeSide = secondSide;
+        loadRackForSide(secondSide, 0);
+        addLog(`— ${sideLabel(secondSide)} Placement Phase —`, 'log-phase');
+        renderRack();
+        resizeCanvas();
+        updateUI();
+        return;
+      } else {
+        // Both sides placed, start turn 1
+        state.phase = PHASE_COMBAT;
+        state.activeSide = ALLIED;
+        state.turn = 1;
+        // Check for turn-1 reinforcements (shouldn't normally happen but handle it)
+        if (checkReinforcements(ALLIED)) {
+          state.phase = PHASE_REINFORCEMENT;
+          loadRackForSide(ALLIED, 1);
+          addLog(`═══ TURN 1 ═══`, 'log-phase');
+          addLog(`— Allied Reinforcement Phase —`, 'log-phase');
+          renderRack();
+          resizeCanvas();
+          updateUI();
+          return;
+        }
+        addLog(`═══ TURN 1 ═══`, 'log-phase');
+        addLog(`— Allied Combat Phase —`, 'log-phase');
+        renderRack();
+        resizeCanvas();
+        updateUI();
+        return;
+      }
+    }
+
+    if (state.phase === PHASE_REINFORCEMENT) {
+      // Done placing reinforcements, proceed to combat
+      state.phase = PHASE_COMBAT;
+      addLog(`— ${sideLabel(state.activeSide)} Combat Phase —`, 'log-phase');
+      renderRack();
+      resizeCanvas();
+      updateUI();
+      return;
+    }
+  }
+
+  if (state.phase === PHASE_COMBAT) {
+    state.phase = PHASE_MOVEMENT;
+    addLog(`— ${sideLabel(state.activeSide)} Movement Phase —`, 'log-phase');
+  } else {
+    // End of movement: switch sides
+    for (const u of state.units) {
+      if (u.side === state.activeSide && u.placed) {
+        u.fired = false;
+        u.moved = false;
+      }
+    }
+    if (state.activeSide === ALLIED) {
+      state.activeSide = GERMAN;
+      // Check for German reinforcements this turn
+      if (checkReinforcements(GERMAN)) {
+        state.phase = PHASE_REINFORCEMENT;
+        loadRackForSide(GERMAN, state.turn);
+        addLog(`— German Reinforcement Phase —`, 'log-phase');
+        renderRack();
+        resizeCanvas();
+        updateUI();
+        return;
+      }
+      state.phase = PHASE_COMBAT;
+      addLog(`— German Combat Phase —`, 'log-phase');
+    } else {
+      state.activeSide = ALLIED;
+      state.turn++;
+      addLog(`═══ TURN ${state.turn} ═══`, 'log-phase');
+      // Check for Allied reinforcements
+      if (checkReinforcements(ALLIED)) {
+        state.phase = PHASE_REINFORCEMENT;
+        loadRackForSide(ALLIED, state.turn);
+        addLog(`— Allied Reinforcement Phase —`, 'log-phase');
+        renderRack();
+        resizeCanvas();
+        updateUI();
+        return;
+      }
+      state.phase = PHASE_COMBAT;
+      addLog(`— Allied Combat Phase —`, 'log-phase');
+    }
+  }
+  renderRack();
+  resizeCanvas();
+  updateUI();
+}
+
+function sideLabel(side) {
+  return side === ALLIED ? 'Allied' : 'German';
+}
+
+// ═══════════════════════════════════════════
+// SECTION 6: INPUT HANDLING
+// ═══════════════════════════════════════════
+
+canvas.addEventListener('click', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const hex = pixelToHex(x, y);
+  if (!hex) return;
+
+  handleHexClick(hex.col, hex.row);
+});
+
+canvas.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  const isPlacing = state.phase === PHASE_PLACEMENT || state.phase === PHASE_REINFORCEMENT;
+
+  if (isPlacing) {
+    // Right-click on placed unit during placement: return to rack
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const hex = pixelToHex(x, y);
+    if (hex) {
+      const units = getUnitsAt(hex.col, hex.row).filter(u => u.side === state.activeSide);
+      if (units.length > 0) {
+        returnUnitToRack(units[units.length - 1]);
+        return;
+      }
+    }
+  }
+
+  selectUnit(null);
+  state.selectedRackIndex = -1;
+  renderRack();
+  updateUI();
+});
+
+function handleHexClick(col, row) {
+  const isPlacing = state.phase === PHASE_PLACEMENT || state.phase === PHASE_REINFORCEMENT;
+
+  // Placement mode: place selected rack unit
+  if (isPlacing && state.selectedRackIndex >= 0) {
+    if (placeUnitFromRack(state.selectedRackIndex, col, row)) {
+      return;
+    }
+    // Invalid hex — deselect rack unit
+    state.selectedRackIndex = -1;
+    renderRack();
+    updateUI();
+    return;
+  }
+
+  // Placement mode: click on already-placed unit to select (for return to rack)
+  if (isPlacing) {
+    const unitsHere = getUnitsAt(col, row).filter(u => u.side === state.activeSide);
+    if (unitsHere.length > 0) {
+      selectUnit(unitsHere[0]);
+      return;
+    }
+    selectUnit(null);
+    return;
+  }
+
+  // In move mode: try to move selected unit to clicked hex
+  if (state.moveMode && state.reachableHexes) {
+    const key = hexKey(col, row);
+    if (state.reachableHexes.has(key)) {
+      const unit = getSelectedUnit();
+      if (unit) {
+        executeMove(unit, col, row);
+        return;
+      }
+    }
+    state.moveMode = false;
+    state.reachableHexes = null;
+    updateUI();
+    return;
+  }
+
+  // In fire mode: try to fire at clicked hex
+  if (state.fireMode && state.targetableHexes) {
+    const key = hexKey(col, row);
+    if (state.targetableHexes.has(key)) {
+      const unit = getSelectedUnit();
+      if (unit) {
+        executeFire(unit, col, row);
+        return;
+      }
+    }
+    state.fireMode = false;
+    state.targetableHexes = null;
+    updateUI();
+    return;
+  }
+
+  // Normal click: select unit in hex
+  const unitsHere = getUnitsAt(col, row);
+  if (unitsHere.length > 0) {
+    const sel = getSelectedUnit();
+    if (sel && sel.col === col && sel.row === row) {
+      const idx = unitsHere.findIndex(u => u.id === sel.id);
+      const next = unitsHere[(idx + 1) % unitsHere.length];
+      selectUnit(next);
+    } else {
+      selectUnit(unitsHere[0]);
+    }
+  } else {
+    selectUnit(null);
+  }
+}
+
+// Drag and drop support on canvas
+canvas.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const rect = canvas.getBoundingClientRect();
+  const hex = pixelToHex(e.clientX - rect.left, e.clientY - rect.top);
+  state.hoverHex = hex;
+});
+
+canvas.addEventListener('dragleave', () => {
+  state.hoverHex = null;
+});
+
+// General mouse hover tracking
+canvas.addEventListener('mousemove', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const hex = pixelToHex(e.clientX - rect.left, e.clientY - rect.top);
+  state.mouseHex = hex;
+});
+canvas.addEventListener('mouseleave', () => {
+  state.mouseHex = null;
+});
+
+canvas.addEventListener('drop', (e) => {
+  e.preventDefault();
+  state.hoverHex = null;
+  const rackIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
+  if (isNaN(rackIndex)) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const hex = pixelToHex(e.clientX - rect.left, e.clientY - rect.top);
+  if (!hex) return;
+
+  placeUnitFromRack(rackIndex, hex.col, hex.row);
+});
+
+document.addEventListener('keydown', (e) => {
+  const isPlacing = state.phase === PHASE_PLACEMENT || state.phase === PHASE_REINFORCEMENT;
+
+  if (e.key === 'f' || e.key === 'F') {
+    if (!isPlacing) enterFireMode();
+  } else if (e.key === 'm' || e.key === 'M') {
+    if (!isPlacing) enterMoveMode();
+  } else if (e.key === 'r' || e.key === 'R') {
+    if (isPlacing) {
+      const sel = getSelectedUnit();
+      if (sel && sel.side === state.activeSide) {
+        returnUnitToRack(sel);
+      }
+    }
+  } else if (e.key === 'Enter') {
+    advancePhase();
+  } else if (e.key === 'n' || e.key === 'N') {
+    if (isPlacing) {
+      // Cycle rack selection
+      if (state.rack.length > 0) {
+        selectRackUnit((state.selectedRackIndex + 1) % state.rack.length);
+        renderRack();
+      }
+    } else {
+      selectNextUnit();
+    }
+  } else if (e.key === '?') {
+    toggleRulesPanel();
+  } else if (e.key === 'Escape') {
+    const rp = document.getElementById('rules-panel');
+    if (rp.classList.contains('visible')) {
+      rp.classList.remove('visible');
+      return;
+    }
+    selectUnit(null);
+    state.selectedRackIndex = -1;
+    renderRack();
+    updateUI();
+  }
+});
+
+function toggleRulesPanel() {
+  document.getElementById('rules-panel').classList.toggle('visible');
+}
+document.getElementById('btn-rules').addEventListener('click', toggleRulesPanel);
+document.getElementById('btn-rules-close').addEventListener('click', toggleRulesPanel);
+
+function selectNextUnit() {
+  const available = state.units.filter(u =>
+    !u.destroyed && u.placed && u.side === state.activeSide &&
+    !u.fired && !u.moved
+  );
+  if (available.length === 0) return;
+  const sel = getSelectedUnit();
+  if (!sel) {
+    selectUnit(available[0]);
+    return;
+  }
+  const idx = available.findIndex(u => u.id === sel.id);
+  selectUnit(available[(idx + 1) % available.length]);
+}
+
+// Button bindings
+document.getElementById('btn-fire').addEventListener('click', enterFireMode);
+document.getElementById('btn-move').addEventListener('click', enterMoveMode);
+document.getElementById('btn-end-phase').addEventListener('click', advancePhase);
+document.getElementById('btn-next-unit').addEventListener('click', () => {
+  const isPlacing = state.phase === PHASE_PLACEMENT || state.phase === PHASE_REINFORCEMENT;
+  if (isPlacing && state.rack.length > 0) {
+    selectRackUnit((state.selectedRackIndex + 1) % state.rack.length);
+    renderRack();
+  } else {
+    selectNextUnit();
+  }
+});
+document.getElementById('btn-return').addEventListener('click', () => {
+  const sel = getSelectedUnit();
+  if (sel && sel.side === state.activeSide) {
+    returnUnitToRack(sel);
+  }
+});
+
+// ═══════════════════════════════════════════
+// SECTION 7: UI PANELS & RACK
+// ═══════════════════════════════════════════
+
+function renderRack() {
+  const rackContainer = document.getElementById('rack-container');
+  const rackUnits = document.getElementById('rack-units');
+  const isPlacing = state.phase === PHASE_PLACEMENT || state.phase === PHASE_REINFORCEMENT;
+
+  if (!isPlacing || state.rack.length === 0) {
+    rackContainer.classList.remove('visible');
+    rackUnits.innerHTML = '';
+    return;
+  }
+
+  rackContainer.classList.add('visible');
+
+  // Update label
+  const label = document.getElementById('rack-label');
+  const remaining = state.rack.length;
+  const phaseLabel = state.phase === PHASE_REINFORCEMENT ? 'Reinforcements' : 'Placement';
+  label.textContent = `${sideLabel(state.activeSide)} ${phaseLabel} — ${remaining} unit${remaining !== 1 ? 's' : ''} remaining — drag onto highlighted hexes, or click then click hex`;
+
+  rackUnits.innerHTML = '';
+  state.rack.forEach((entry, i) => {
+    const utype = UNIT_TYPES[entry.type];
+    const div = document.createElement('div');
+    div.className = 'rack-unit ' + (entry.side === ALLIED ? 'allied-rack' : 'german-rack');
+    if (i === state.selectedRackIndex) div.classList.add('selected');
+    div.draggable = true;
+    div.dataset.index = i;
+
+    div.innerHTML = `
+      <div class="rack-unit-name">${utype.name}</div>
+      <div class="rack-unit-stats">AT:${utype.at} AP:${utype.ap} DF:${utype.df}</div>
+      <div class="rack-unit-class">${utype.class} MP:${utype.mp} R:${utype.range}</div>
+      ${utype.armored ? '<div class="armored-badge"></div>' : ''}
+    `;
+
+    // Click to select
+    div.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (state.selectedRackIndex === i) {
+        selectRackUnit(-1);
+      } else {
+        selectRackUnit(i);
+      }
+      renderRack();
+    });
+
+    // Drag start
+    div.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', String(i));
+      e.dataTransfer.effectAllowed = 'move';
+      selectRackUnit(i);
+      renderRack();
+    });
+
+    // Hover shows unit info in sidebar
+    div.addEventListener('mouseenter', () => {
+      showRackUnitInfo(entry.type, entry.side);
+    });
+    div.addEventListener('mouseleave', () => {
+      if (state.selectedRackIndex < 0 && !state.selectedUnitId) {
+        clearUnitInfo();
+      }
+    });
+
+    rackUnits.appendChild(div);
+  });
+}
+
+function showRackUnitInfo(typeId, side) {
+  const utype = UNIT_TYPES[typeId];
+  const detailsEl = document.getElementById('unit-details');
+  detailsEl.innerHTML = `
+    <div class="unit-name-display ${side === ALLIED ? 'allied-unit' : 'german-unit'}">
+      ${utype.name}
+    </div>
+    <div class="stat-grid">
+      <span class="stat-label">Side:</span><span class="stat-value">${sideLabel(side)}</span>
+      <span class="stat-label">Class:</span><span class="stat-value">${utype.class}${utype.armored ? ' [A]' : ''}</span>
+      <span class="stat-label">AT Factor:</span><span class="stat-value">${utype.at}</span>
+      <span class="stat-label">AP Factor:</span><span class="stat-value">${utype.ap}</span>
+      <span class="stat-label">DF Factor:</span><span class="stat-value">${utype.df}</span>
+      <span class="stat-label">Range:</span><span class="stat-value">${utype.range}</span>
+      <span class="stat-label">MP:</span><span class="stat-value">${utype.mp}</span>
+      <span class="stat-label">Status:</span><span class="stat-value">In Rack</span>
+    </div>
+  `;
+}
+
+function clearUnitInfo() {
+  const isPlacing = state.phase === PHASE_PLACEMENT || state.phase === PHASE_REINFORCEMENT;
+  document.getElementById('unit-details').innerHTML = isPlacing
+    ? '<i style="color:#666">Select a unit from the rack to place it</i>'
+    : '<i style="color:#666">Click a hex to select a unit</i>';
+}
+
+function updateUI() {
+  const isPlacing = state.phase === PHASE_PLACEMENT || state.phase === PHASE_REINFORCEMENT;
+
+  // Turn/phase display
+  document.getElementById('turn-display').textContent = isPlacing && state.phase === PHASE_PLACEMENT
+    ? 'Setup' : 'Turn ' + state.turn;
+  const phaseEl = document.getElementById('phase-display');
+  let phaseText;
+  if (state.phase === PHASE_PLACEMENT) {
+    phaseText = sideLabel(state.activeSide) + ' Placement Phase';
+  } else if (state.phase === PHASE_REINFORCEMENT) {
+    phaseText = sideLabel(state.activeSide) + ' Reinforcement Phase';
+  } else {
+    phaseText = sideLabel(state.activeSide) + ' ' +
+      (state.phase === PHASE_COMBAT ? 'Combat' : 'Movement') + ' Phase';
+  }
+  phaseEl.textContent = phaseText;
+  phaseEl.className = 'phase ' + (state.activeSide === ALLIED ? 'allied-phase' : 'german-phase');
+
+  // Unit info panel
+  const sel = getSelectedUnit();
+  const detailsEl = document.getElementById('unit-details');
+
+  if (state.selectedRackIndex >= 0 && state.selectedRackIndex < state.rack.length) {
+    const entry = state.rack[state.selectedRackIndex];
+    showRackUnitInfo(entry.type, entry.side);
+  } else if (sel) {
+    const utype = UNIT_TYPES[sel.type];
+    const terrainMod = TERRAIN_INFO[state.map[sel.col][sel.row]].dfMod;
+    const terrainName = TERRAIN_INFO[state.map[sel.col][sel.row]].name;
+    detailsEl.innerHTML = `
+      <div class="unit-name-display ${sel.side === ALLIED ? 'allied-unit' : 'german-unit'}">
+        ${utype.name}
+      </div>
+      <div class="stat-grid">
+        <span class="stat-label">Side:</span><span class="stat-value">${sideLabel(sel.side)}</span>
+        <span class="stat-label">Class:</span><span class="stat-value">${utype.class}${utype.armored ? ' [A]' : ''}</span>
+        <span class="stat-label">AT Factor:</span><span class="stat-value">${utype.at}</span>
+        <span class="stat-label">AP Factor:</span><span class="stat-value">${utype.ap}</span>
+        <span class="stat-label">DF Factor:</span><span class="stat-value">${utype.df} (×${terrainMod} ${terrainName})</span>
+        <span class="stat-label">Range:</span><span class="stat-value">${utype.range}</span>
+        <span class="stat-label">MP:</span><span class="stat-value">${utype.mp}</span>
+        <span class="stat-label">Position:</span><span class="stat-value">(${sel.col},${sel.row})</span>
+        <span class="stat-label">Status:</span><span class="stat-value">${sel.fired ? 'FIRED' : sel.moved ? 'MOVED' : 'Ready'}</span>
+      </div>
+    `;
+  } else {
+    clearUnitInfo();
+  }
+
+  // Buttons
+  const btnFire = document.getElementById('btn-fire');
+  const btnMove = document.getElementById('btn-move');
+  const btnReturn = document.getElementById('btn-return');
+  const btnNext = document.getElementById('btn-next-unit');
+  const btnEnd = document.getElementById('btn-end-phase');
+
+  if (isPlacing) {
+    btnFire.className = 'hidden';
+    btnMove.className = 'hidden';
+    btnReturn.className = '';
+    btnReturn.disabled = !sel || sel.side !== state.activeSide;
+    btnNext.disabled = state.rack.length === 0;
+    btnEnd.textContent = state.rack.length === 0 ? 'Done Placing [Enter]' : `Done Placing (${state.rack.length} left) [Enter]`;
+  } else {
+    btnFire.className = '';
+    btnMove.className = '';
+    btnReturn.className = 'hidden';
+
+    const canFire = sel && sel.side === state.activeSide && state.phase === PHASE_COMBAT && !sel.fired && !sel.moved;
+    const canMove = sel && sel.side === state.activeSide && state.phase === PHASE_MOVEMENT && !sel.moved && !sel.fired;
+    const hasAvailable = state.units.some(u => !u.destroyed && u.placed && u.side === state.activeSide && !u.fired && !u.moved);
+
+    btnFire.disabled = !canFire;
+    btnMove.disabled = !canMove;
+    btnNext.disabled = !hasAvailable;
+    btnEnd.textContent = 'End Phase [Enter]';
+
+    if (state.fireMode) btnFire.className = 'active';
+    if (state.moveMode) btnMove.className = 'active';
+  }
+
+  // Help text
+  const helpEl = document.getElementById('help-text');
+  if (isPlacing) {
+    helpEl.innerHTML = 'Click rack unit, then click highlighted hex to place. Drag also works.<br>Right-click placed unit to return to rack. [R] Return &middot; [N] Next &middot; [Enter] Done';
+  } else {
+    helpEl.innerHTML = 'Click hex to select unit. Right-click to deselect.<br>[F] Fire mode &middot; [M] Move mode &middot; [N] Next unit &middot; [Enter] End phase';
+  }
+}
+
+function addLog(text, className) {
+  const entries = document.getElementById('log-entries');
+  const div = document.createElement('div');
+  div.className = 'log-entry ' + (className || '');
+  div.textContent = text;
+  entries.prepend(div);
+  while (entries.children.length > 100) {
+    entries.removeChild(entries.lastChild);
+  }
+}
+
+// ═══════════════════════════════════════════
+// SECTION 8: INITIALIZATION
+// ═══════════════════════════════════════════
+
+function startScenario(loadFn, scenarioName) {
+  document.getElementById('scenario-select').style.display = 'none';
+  loadFn();
+  renderRack();
+  resizeCanvas();
+  const firstSide = state.placementOrder[0];
+  addLog(`— ${sideLabel(firstSide)} Placement Phase —`, 'log-phase');
+  addLog(`${scenarioName} loaded.`, 'log-phase');
+  addLog('Place your units on the highlighted hexes.', 'log-place');
+  updateUI();
+  requestAnimationFrame(render);
+}
+
+function init() {
+  window.addEventListener('resize', () => { resizeCanvas(); });
+
+  document.getElementById('card-cobra').addEventListener('click', () => {
+    startScenario(loadTestScenario, 'Cobra Engagement');
+  });
+
+  document.getElementById('card-omaha').addEventListener('click', () => {
+    startScenario(loadOmahaScenario, 'Omaha Beach — D-Day, June 6 1944');
+  });
+}
+
+init();
+</script>
+</body>
+</html>
