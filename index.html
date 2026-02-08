@@ -167,6 +167,56 @@ canvas { display: block; cursor: crosshair; flex: 1; }
   font-size: 11px;
   color: #666;
 }
+
+/* Export modal */
+#export-modal {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.75);
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+}
+#export-modal.visible { display: flex; }
+#export-modal .modal-box {
+  background: #2a2a28;
+  border: 2px solid #666;
+  padding: 28px 32px;
+  max-width: 420px;
+  text-align: center;
+}
+#export-modal h2 {
+  font-size: 18px;
+  color: #e0dcc8;
+  margin-bottom: 12px;
+}
+#export-modal .modal-info {
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 18px;
+}
+#export-modal button {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 8px;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid #666;
+}
+#export-modal .btn-export {
+  background: #6b8e4e;
+  color: #fff;
+  border-color: #8ab86e;
+}
+#export-modal .btn-export:hover { background: #7a9e5e; }
+#export-modal .btn-skip {
+  background: #444;
+  color: #e0dcc8;
+}
+#export-modal .btn-skip:hover { background: #555; }
 </style>
 </head>
 <body>
@@ -183,6 +233,12 @@ canvas { display: block; cursor: crosshair; flex: 1; }
       <h2>Omaha Beach &mdash; D-Day</h2>
       <div class="sc-desc">June 6, 1944. The US 1st and 29th Infantry Divisions assault the fortified bluffs of Omaha Beach against the German 352nd Infantry Division. Storm the beaches and break through the Atlantic Wall.</div>
       <div class="sc-meta">30&times;20 hex map &middot; ~35 German / 13+ US first wave &middot; Reinforcement waves turns 2-4</div>
+    </div>
+    <div class="scenario-card" id="card-resume">
+      <h2>Resume Game</h2>
+      <div class="sc-desc">Load a saved turn file (.json) to continue a play-by-email game where your opponent left off.</div>
+      <div class="sc-meta" id="resume-filename">Click to select a turn file</div>
+      <input type="file" id="resume-file-input" accept=".json" style="display:none">
     </div>
   </div>
 </div>
@@ -256,6 +312,7 @@ canvas { display: block; cursor: crosshair; flex: 1; }
     <ul>
       <li>Select unit &rarr; press <kbd>F</kbd> or click Fire button</li>
       <li>Valid targets highlighted in red (within range + line of sight)</li>
+      <li><strong>Indirect fire:</strong> Mortars and artillery can fire without LOS. Unspotted targets shown in dim orange — attack halved. A friendly unit with LOS to the target acts as a spotter for full attack (bright red).</li>
       <li>Click target hex to attack</li>
       <li>Attack uses AT factor vs armored targets, AP factor vs unarmored</li>
       <li>Defense = target&rsquo;s DF &times; terrain modifier</li>
@@ -325,12 +382,21 @@ canvas { display: block; cursor: crosshair; flex: 1; }
     <h3>Coming Soon</h3>
     <table>
       <tr><th>Feature</th><th>Description</th></tr>
-      <tr><td>Play By Email</td><td>Save game state as JSON, download/upload turn files</td></tr>
+      <tr><td>Play By Email</td><td>At the end of each movement phase, export your turn as a JSON file. Your opponent uploads it via &ldquo;Resume Game&rdquo; to continue.</td></tr>
       <tr><td>Save / Load</td><td>Serialize game state to localStorage or file</td></tr>
       <tr><td>Victory Conditions</td><td>Win/loss criteria per scenario (objectives, losses, turn limit)</td></tr>
       <tr><td>Undo</td><td>Undo last action within a phase</td></tr>
       <tr><td>AI Opponent</td><td>Computer-controlled side for solo play</td></tr>
     </table>
+  </div>
+</div>
+
+<div id="export-modal">
+  <div class="modal-box">
+    <h2>Turn Complete!</h2>
+    <div class="modal-info" id="export-filename"></div>
+    <button class="btn-export" id="btn-export-download">Export &amp; Download Turn File</button>
+    <button class="btn-skip" id="btn-export-skip">Continue Without Export</button>
   </div>
 </div>
 
@@ -387,17 +453,17 @@ const UNIT_TYPES = {
   'ge_mg':        { name: 'MG Sec.',       class: INF,  armored: false, mp: 4,  at: 0,  ap: 8,  df: 2, range: 4,  symbol: '.', side: GERMAN },
   'ge_pak40':     { name: 'PaK 40',        class: AT_GUN, armored: false, mp: 2, at: 14, ap: 2, df: 2, range: 8,  symbol: '|', side: GERMAN },
   'ge_grenadier': { name: 'Panzergren.',   class: MECH, armored: false, mp: 6,  at: 4,  ap: 6,  df: 4, range: 1,  symbol: 'X', side: GERMAN },
-  'ge_wespe':     { name: 'Wespe',         class: ART,  armored: true,  mp: 10, at: 2,  ap: 10, df: 2, range: 16, symbol: 'O', side: GERMAN },
+  'ge_wespe':     { name: 'Wespe',         class: ART,  armored: true,  mp: 10, at: 2,  ap: 10, df: 2, range: 16, symbol: 'O', side: GERMAN, indirect: true },
   'ge_sdkfz234':  { name: 'SdKfz 234',    class: RECON, armored: true, mp: 16, at: 6,  ap: 4,  df: 2, range: 6,  symbol: '/', side: GERMAN },
   'ge_flak88':    { name: 'Flak 88',       class: AT_GUN, armored: false, mp: 0, at: 20, ap: 8, df: 2, range: 12, symbol: '*', side: GERMAN },
-  'ge_mortar':    { name: '81mm Mortar',   class: INF,  armored: false, mp: 4,  at: 0,  ap: 6,  df: 2, range: 6,  symbol: 'M', side: GERMAN },
+  'ge_mortar':    { name: '81mm Mortar',   class: INF,  armored: false, mp: 4,  at: 0,  ap: 6,  df: 2, range: 6,  symbol: 'M', side: GERMAN, indirect: true },
   // German Omaha units
   'ge_mg42_bunker': { name: 'MG42 Bunker', class: INF,    armored: false, mp: 0,  at: 0,  ap: 10, df: 4, range: 6,  symbol: '.', side: GERMAN },
   'ge_75mm_case':   { name: '75mm Csmt',   class: AT_GUN, armored: false, mp: 0,  at: 10, ap: 8,  df: 4, range: 8,  symbol: '|', side: GERMAN },
   'ge_88mm_case':   { name: '88mm Csmt',   class: AT_GUN, armored: false, mp: 0,  at: 20, ap: 8,  df: 4, range: 10, symbol: '*', side: GERMAN },
   'ge_50mm_at':     { name: '50mm AT',     class: AT_GUN, armored: false, mp: 0,  at: 8,  ap: 2,  df: 2, range: 6,  symbol: '|', side: GERMAN },
   'ge_wn_garrison': { name: 'WN Garrison', class: INF,    armored: false, mp: 2,  at: 2,  ap: 6,  df: 4, range: 1,  symbol: 'X', side: GERMAN },
-  'ge_81mm_mortar': { name: '81mm Mortar', class: INF,    armored: false, mp: 0,  at: 0,  ap: 8,  df: 2, range: 8,  symbol: 'M', side: GERMAN },
+  'ge_81mm_mortar': { name: '81mm Mortar', class: INF,    armored: false, mp: 0,  at: 0,  ap: 8,  df: 2, range: 8,  symbol: 'M', side: GERMAN, indirect: true },
   'ge_352_reserve': { name: '352nd Res.',  class: INF,    armored: false, mp: 4,  at: 2,  ap: 6,  df: 4, range: 1,  symbol: 'X', side: GERMAN },
   'ge_tobruk':      { name: 'Tobruk',      class: AT_GUN, armored: false, mp: 0,  at: 6,  ap: 4,  df: 4, range: 4,  symbol: '|', side: GERMAN },
   // American units
@@ -409,10 +475,10 @@ const UNIT_TYPES = {
   'us_mg':        { name: '.30 Cal MG',    class: INF,  armored: false, mp: 4,  at: 0,  ap: 8,  df: 2, range: 4,  symbol: '.', side: ALLIED },
   'us_57mm':      { name: '57mm AT Gun',   class: AT_GUN, armored: false, mp: 2, at: 10, ap: 2, df: 2, range: 8,  symbol: '|', side: ALLIED },
   'us_airborne':  { name: 'Airborne',      class: INF,  armored: false, mp: 6,  at: 4,  ap: 8,  df: 6, range: 1,  symbol: 'X', side: ALLIED },
-  'us_priest':    { name: 'M7 Priest',     class: ART,  armored: true,  mp: 10, at: 2,  ap: 10, df: 2, range: 16, symbol: 'O', side: ALLIED },
+  'us_priest':    { name: 'M7 Priest',     class: ART,  armored: true,  mp: 10, at: 2,  ap: 10, df: 2, range: 16, symbol: 'O', side: ALLIED, indirect: true },
   'us_hellcat':   { name: 'M18 Hellcat',   class: ARM,  armored: true,  mp: 16, at: 16, ap: 4,  df: 2, range: 10, symbol: 'X', side: ALLIED },
   'us_greyhound': { name: 'M8 Greyhound',  class: RECON, armored: true, mp: 16, at: 4,  ap: 4,  df: 2, range: 6,  symbol: '/', side: ALLIED },
-  'us_mortar':    { name: '81mm Mortar',   class: INF,  armored: false, mp: 4,  at: 0,  ap: 6,  df: 2, range: 6,  symbol: 'M', side: ALLIED },
+  'us_mortar':    { name: '81mm Mortar',   class: INF,  armored: false, mp: 4,  at: 0,  ap: 6,  df: 2, range: 6,  symbol: 'M', side: ALLIED, indirect: true },
   // American Omaha units
   'us_116_inf':    { name: '116th Inf',   class: INF,  armored: false, mp: 4,  at: 2,  ap: 6,  df: 4, range: 1,  symbol: 'X', side: ALLIED },
   'us_16_inf':     { name: '16th Inf',    class: INF,  armored: false, mp: 4,  at: 2,  ap: 6,  df: 4, range: 1,  symbol: 'X', side: ALLIED },
@@ -422,7 +488,7 @@ const UNIT_TYPES = {
   'us_743_sherman': { name: '743rd Tank', class: ARM,  armored: true,  mp: 8,  at: 10, ap: 6,  df: 4, range: 8,  symbol: 'X', side: ALLIED },
   'us_741_sherman': { name: '741st Tank', class: ARM,  armored: true,  mp: 8,  at: 10, ap: 6,  df: 2, range: 8,  symbol: 'X', side: ALLIED },
   'us_engineer':   { name: 'Engineers',   class: INF,  armored: false, mp: 4,  at: 0,  ap: 4,  df: 2, range: 1,  symbol: 'X', side: ALLIED },
-  'us_105mm':      { name: '105mm How.',  class: ART,  armored: false, mp: 2,  at: 2,  ap: 10, df: 2, range: 12, symbol: 'O', side: ALLIED },
+  'us_105mm':      { name: '105mm How.',  class: ART,  armored: false, mp: 2,  at: 2,  ap: 10, df: 2, range: 12, symbol: 'O', side: ALLIED, indirect: true },
   'us_dd_tank':    { name: 'DD Sherman',  class: ARM,  armored: true,  mp: 8,  at: 10, ap: 6,  df: 2, range: 8,  symbol: 'X', side: ALLIED },
 };
 
@@ -469,6 +535,7 @@ let state = {
   hoverHex: null,          // { col, row } for drag hover highlight
   mouseHex: null,          // { col, row } for general mouse hover
   placementOrder: [ALLIED, GERMAN],  // which side places first, then second
+  scenarioName: '',
 };
 
 let nextUnitId = 1;
@@ -1025,6 +1092,14 @@ function hasLOS(c1, r1, c2, r2) {
   return true;
 }
 
+function hasSpotter(side, targetCol, targetRow) {
+  for (const u of state.units) {
+    if (u.destroyed || !u.placed || u.side !== side) continue;
+    if (hasLOS(u.col, u.row, targetCol, targetRow)) return true;
+  }
+  return false;
+}
+
 // ═══════════════════════════════════════════
 // SECTION 4: MAP RENDERING
 // ═══════════════════════════════════════════
@@ -1216,10 +1291,14 @@ function drawOverlays() {
 
   // Fire target overlay
   if (state.fireMode && state.targetableHexes) {
-    state.targetableHexes.forEach(key => {
+    state.targetableHexes.forEach((data, key) => {
       const [c, r] = key.split(',').map(Number);
       const { x, y } = hexToPixel(c, r);
-      drawHex(x, y, HEX_SIZE - 2, 'rgba(200,80,80,0.3)', 'rgba(200,80,80,0.8)');
+      if (data.spotted) {
+        drawHex(x, y, HEX_SIZE - 2, 'rgba(200,80,80,0.3)', 'rgba(200,80,80,0.8)');
+      } else {
+        drawHex(x, y, HEX_SIZE - 2, 'rgba(180,100,60,0.25)', 'rgba(180,100,60,0.7)');
+      }
     });
   }
 
@@ -1424,12 +1503,19 @@ function enterFireMode() {
   state.moveMode = false;
   state.reachableHexes = null;
 
-  const targets = new Set();
+  const targets = new Map();
   for (const enemy of state.units) {
     if (enemy.destroyed || !enemy.placed || enemy.side === unit.side) continue;
     const dist = hexDistance(unit.col, unit.row, enemy.col, enemy.row);
-    if (dist <= utype.range && dist > 0 && hasLOS(unit.col, unit.row, enemy.col, enemy.row)) {
-      targets.add(hexKey(enemy.col, enemy.row));
+    if (dist <= 0 || dist > utype.range) continue;
+    const key = hexKey(enemy.col, enemy.row);
+    const los = hasLOS(unit.col, unit.row, enemy.col, enemy.row);
+    if (utype.indirect) {
+      if (!targets.has(key)) {
+        targets.set(key, { spotted: los || hasSpotter(unit.side, enemy.col, enemy.row) });
+      }
+    } else {
+      if (los) targets.set(key, { spotted: true });
     }
   }
   state.targetableHexes = targets;
@@ -1459,10 +1545,24 @@ function executeFire(attacker, targetCol, targetRow) {
   });
   const dtype = UNIT_TYPES[defender.type];
 
-  const attackFactor = dtype.armored ? atype.at : atype.ap;
+  let attackFactor = dtype.armored ? atype.at : atype.ap;
   if (attackFactor <= 0) {
     addLog(`${atype.name} has no effective attack against ${dtype.name}!`, 'log-combat');
     return;
+  }
+
+  const targetKey = hexKey(targetCol, targetRow);
+  const targetData = state.targetableHexes ? state.targetableHexes.get(targetKey) : null;
+  const isIndirect = atype.indirect;
+  const isObserved = !isIndirect || (targetData && targetData.spotted);
+  let observeLabel = '';
+  if (isIndirect) {
+    if (!isObserved) {
+      attackFactor = Math.max(1, Math.floor(attackFactor / 2));
+      observeLabel = ` [unobserved, halved to ${attackFactor}]`;
+    } else {
+      observeLabel = ' [observed]';
+    }
   }
 
   const terrainMod = TERRAIN_INFO[state.map[defender.col][defender.row]].dfMod;
@@ -1490,7 +1590,7 @@ function executeFire(attacker, targetCol, targetRow) {
 
   const terrainName = TERRAIN_INFO[state.map[defender.col][defender.row]].name;
   addLog(
-    `${atype.name} fires at ${dtype.name} — ${attackFactor} vs ${dtype.df}×${terrainMod}(${terrainName})=${defenseFactor} — ${crtCol} odds — die:${dieDisplay} → ${result}`,
+    `${atype.name} fires at ${dtype.name}${observeLabel} — ${attackFactor} vs ${dtype.df}×${terrainMod}(${terrainName})=${defenseFactor} — ${crtCol} odds — die:${dieDisplay} → ${result}`,
     'log-combat'
   );
 
@@ -1631,48 +1731,139 @@ function advancePhase() {
     state.phase = PHASE_MOVEMENT;
     addLog(`— ${sideLabel(state.activeSide)} Movement Phase —`, 'log-phase');
   } else {
-    // End of movement: switch sides
+    // End of movement: reset flags and show export modal
     for (const u of state.units) {
       if (u.side === state.activeSide && u.placed) {
         u.fired = false;
         u.moved = false;
       }
     }
-    if (state.activeSide === ALLIED) {
-      state.activeSide = GERMAN;
-      // Check for German reinforcements this turn
-      if (checkReinforcements(GERMAN)) {
-        state.phase = PHASE_REINFORCEMENT;
-        loadRackForSide(GERMAN, state.turn);
-        addLog(`— German Reinforcement Phase —`, 'log-phase');
-        renderRack();
-        resizeCanvas();
-        updateUI();
-        return;
-      }
-      state.phase = PHASE_COMBAT;
-      addLog(`— German Combat Phase —`, 'log-phase');
-    } else {
-      state.activeSide = ALLIED;
-      state.turn++;
-      addLog(`═══ TURN ${state.turn} ═══`, 'log-phase');
-      // Check for Allied reinforcements
-      if (checkReinforcements(ALLIED)) {
-        state.phase = PHASE_REINFORCEMENT;
-        loadRackForSide(ALLIED, state.turn);
-        addLog(`— Allied Reinforcement Phase —`, 'log-phase');
-        renderRack();
-        resizeCanvas();
-        updateUI();
-        return;
-      }
-      state.phase = PHASE_COMBAT;
-      addLog(`— Allied Combat Phase —`, 'log-phase');
-    }
+    showExportModal();
+    return;
   }
   renderRack();
   resizeCanvas();
   updateUI();
+}
+
+function exportGameState() {
+  const data = {
+    version: 1,
+    scenarioName: state.scenarioName,
+    map: state.map,
+    units: state.units,
+    turn: state.turn,
+    activeSide: state.activeSide,
+    phase: state.phase,
+    allReinforcements: state.allReinforcements,
+    placementOrder: state.placementOrder,
+    placementZones: {
+      [ALLIED]: state.placementZones ? [...state.placementZones[ALLIED]] : [],
+      [GERMAN]: state.placementZones ? [...state.placementZones[GERMAN]] : [],
+    },
+    nextUnitId: nextUnitId,
+    MAP_COLS: MAP_COLS,
+    MAP_ROWS: MAP_ROWS,
+    battleLog: document.getElementById('log-entries').innerHTML,
+  };
+  const json = JSON.stringify(data);
+  const encoded = btoa(unescape(encodeURIComponent(json)));
+  const safeName = (state.scenarioName || 'game').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+  const filename = `${safeName}-turn-${state.turn}-${state.activeSide}.json`;
+  const blob = new Blob([encoded], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  return filename;
+}
+
+function importGameState(encoded) {
+  const json = decodeURIComponent(escape(atob(encoded)));
+  const data = JSON.parse(json);
+
+  MAP_COLS = data.MAP_COLS;
+  MAP_ROWS = data.MAP_ROWS;
+  nextUnitId = data.nextUnitId;
+
+  state.map = data.map;
+  state.units = data.units;
+  state.turn = data.turn;
+  state.activeSide = data.activeSide;
+  state.phase = data.phase;
+  state.allReinforcements = data.allReinforcements;
+  state.placementOrder = data.placementOrder;
+  state.scenarioName = data.scenarioName;
+  state.placementZones = {
+    [ALLIED]: new Set(data.placementZones[ALLIED]),
+    [GERMAN]: new Set(data.placementZones[GERMAN]),
+  };
+
+  // Clear transient state
+  state.selectedUnitId = null;
+  state.moveMode = false;
+  state.fireMode = false;
+  state.reachableHexes = null;
+  state.targetableHexes = null;
+  state.rack = [];
+  state.selectedRackIndex = -1;
+  state.hoverHex = null;
+  state.mouseHex = null;
+
+  // Restore battle log
+  if (data.battleLog) {
+    document.getElementById('log-entries').innerHTML = data.battleLog;
+  }
+
+  resizeCanvas();
+  renderRack();
+  updateUI();
+}
+
+function finishPhaseAdvance() {
+  if (state.activeSide === ALLIED) {
+    state.activeSide = GERMAN;
+    if (checkReinforcements(GERMAN)) {
+      state.phase = PHASE_REINFORCEMENT;
+      loadRackForSide(GERMAN, state.turn);
+      addLog(`— German Reinforcement Phase —`, 'log-phase');
+      renderRack();
+      resizeCanvas();
+      updateUI();
+      return;
+    }
+    state.phase = PHASE_COMBAT;
+    addLog(`— German Combat Phase —`, 'log-phase');
+  } else {
+    state.activeSide = ALLIED;
+    state.turn++;
+    addLog(`═══ TURN ${state.turn} ═══`, 'log-phase');
+    if (checkReinforcements(ALLIED)) {
+      state.phase = PHASE_REINFORCEMENT;
+      loadRackForSide(ALLIED, state.turn);
+      addLog(`— Allied Reinforcement Phase —`, 'log-phase');
+      renderRack();
+      resizeCanvas();
+      updateUI();
+      return;
+    }
+    state.phase = PHASE_COMBAT;
+    addLog(`— Allied Combat Phase —`, 'log-phase');
+  }
+  renderRack();
+  resizeCanvas();
+  updateUI();
+}
+
+function showExportModal() {
+  const safeName = (state.scenarioName || 'game').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+  const filename = `${safeName}-turn-${state.turn}-${state.activeSide}.json`;
+  document.getElementById('export-filename').textContent = `File: ${filename}`;
+  document.getElementById('export-modal').classList.add('visible');
 }
 
 function sideLabel(side) {
@@ -2118,6 +2309,7 @@ function addLog(text, className) {
 function startScenario(loadFn, scenarioName) {
   document.getElementById('scenario-select').style.display = 'none';
   loadFn();
+  state.scenarioName = scenarioName;
   renderRack();
   resizeCanvas();
   const firstSide = state.placementOrder[0];
@@ -2137,6 +2329,40 @@ function init() {
 
   document.getElementById('card-omaha').addEventListener('click', () => {
     startScenario(loadOmahaScenario, 'Omaha Beach — D-Day, June 6 1944');
+  });
+
+  // Resume game card
+  const resumeCard = document.getElementById('card-resume');
+  const resumeInput = document.getElementById('resume-file-input');
+  resumeCard.addEventListener('click', () => { resumeInput.click(); });
+  resumeInput.addEventListener('click', (e) => { e.stopPropagation(); });
+  resumeInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    document.getElementById('resume-filename').textContent = file.name;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        importGameState(ev.target.result);
+        document.getElementById('scenario-select').style.display = 'none';
+        addLog(`Game resumed from ${file.name}`, 'log-phase');
+        requestAnimationFrame(render);
+      } catch (err) {
+        alert('Failed to load turn file: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  });
+
+  // Export modal buttons
+  document.getElementById('btn-export-download').addEventListener('click', () => {
+    exportGameState();
+    document.getElementById('export-modal').classList.remove('visible');
+    finishPhaseAdvance();
+  });
+  document.getElementById('btn-export-skip').addEventListener('click', () => {
+    document.getElementById('export-modal').classList.remove('visible');
+    finishPhaseAdvance();
   });
 }
 
