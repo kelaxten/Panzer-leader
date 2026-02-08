@@ -1683,13 +1683,15 @@ function advancePhase() {
       const firstSide = state.placementOrder[0];
       const secondSide = state.placementOrder[1];
       if (state.activeSide === firstSide) {
-        // Switch to second side placement
-        state.activeSide = secondSide;
-        loadRackForSide(secondSide, 0);
-        addLog(`— ${sideLabel(secondSide)} Placement Phase —`, 'log-phase');
-        renderRack();
-        resizeCanvas();
-        updateUI();
+        // Switch to second side placement — offer export first
+        showExportModal(() => {
+          state.activeSide = secondSide;
+          loadRackForSide(secondSide, 0);
+          addLog(`— ${sideLabel(secondSide)} Placement Phase —`, 'log-phase');
+          renderRack();
+          resizeCanvas();
+          updateUI();
+        });
         return;
       } else {
         // Both sides placed, start turn 1
@@ -1738,7 +1740,7 @@ function advancePhase() {
         u.moved = false;
       }
     }
-    showExportModal();
+    showExportModal(() => { finishPhaseAdvance(); });
     return;
   }
   renderRack();
@@ -1859,7 +1861,10 @@ function finishPhaseAdvance() {
   updateUI();
 }
 
-function showExportModal() {
+let pendingAdvance = null;
+
+function showExportModal(onContinue) {
+  pendingAdvance = onContinue;
   const safeName = (state.scenarioName || 'game').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
   const filename = `${safeName}-turn-${state.turn}-${state.activeSide}.json`;
   document.getElementById('export-filename').textContent = `File: ${filename}`;
@@ -2358,11 +2363,11 @@ function init() {
   document.getElementById('btn-export-download').addEventListener('click', () => {
     exportGameState();
     document.getElementById('export-modal').classList.remove('visible');
-    finishPhaseAdvance();
+    if (pendingAdvance) { pendingAdvance(); pendingAdvance = null; }
   });
   document.getElementById('btn-export-skip').addEventListener('click', () => {
     document.getElementById('export-modal').classList.remove('visible');
-    finishPhaseAdvance();
+    if (pendingAdvance) { pendingAdvance(); pendingAdvance = null; }
   });
 }
 
