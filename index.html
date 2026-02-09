@@ -46,7 +46,7 @@ canvas { display: block; cursor: crosshair; flex: 1; }
   padding: 6px 10px;
   display: none;
   flex-direction: column;
-  min-height: 88px;
+  min-height: 100px;
 }
 #rack-container.visible { display: flex; }
 #rack-label {
@@ -65,8 +65,8 @@ canvas { display: block; cursor: crosshair; flex: 1; }
 }
 .rack-unit {
   flex-shrink: 0;
-  width: 72px;
-  height: 52px;
+  width: 88px;
+  height: 62px;
   border: 2px solid #666;
   cursor: grab;
   display: flex;
@@ -82,9 +82,9 @@ canvas { display: block; cursor: crosshair; flex: 1; }
 .rack-unit.selected { border-color: #ff0; box-shadow: 0 0 8px rgba(255,255,0,0.4); transform: translateY(-3px); }
 .rack-unit.german-rack { background: #5a5a5a; color: #ddd; }
 .rack-unit.allied-rack { background: #4a6a3a; color: #dfd; }
-.rack-unit-name { font-weight: bold; font-size: 10px; text-align: center; line-height: 1.1; }
-.rack-unit-stats { font-size: 9px; color: #bbb; margin-top: 2px; }
-.rack-unit-class { font-size: 8px; color: #888; }
+.rack-unit-name { font-weight: bold; font-size: 11px; text-align: center; line-height: 1.1; }
+.rack-unit-stats { font-size: 10px; color: #bbb; margin-top: 2px; }
+.rack-unit-class { font-size: 9px; color: #888; }
 .rack-unit .armored-badge {
   position: absolute;
   top: 1px; right: 1px;
@@ -217,6 +217,31 @@ canvas { display: block; cursor: crosshair; flex: 1; }
   color: #e0dcc8;
 }
 #export-modal .btn-skip:hover { background: #555; }
+
+/* Zoom controls */
+#zoom-controls {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 5;
+  display: flex;
+  gap: 4px;
+}
+#zoom-controls button {
+  background: rgba(40,40,40,0.8);
+  color: #ccc;
+  border: 1px solid #666;
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+#zoom-controls button:hover { background: rgba(80,80,80,0.9); color: #fff; }
 </style>
 </head>
 <body>
@@ -243,6 +268,11 @@ canvas { display: block; cursor: crosshair; flex: 1; }
   </div>
 </div>
 <div id="map-container">
+  <div id="zoom-controls">
+    <button id="btn-zoom-in" title="Zoom in (+)">+</button>
+    <button id="btn-zoom-out" title="Zoom out (-)">−</button>
+    <button id="btn-zoom-reset" title="Reset zoom (0)">⊙</button>
+  </div>
   <canvas id="map"></canvas>
   <div id="rack-container">
     <div id="rack-label">Place your units — drag onto highlighted hexes, or click then click hex</div>
@@ -376,8 +406,13 @@ canvas { display: block; cursor: crosshair; flex: 1; }
       <tr><td><kbd>Enter</kbd></td><td>End current phase</td></tr>
       <tr><td><kbd>Escape</kbd></td><td>Deselect / cancel</td></tr>
       <tr><td><kbd>?</kbd></td><td>Toggle this rules panel</td></tr>
+      <tr><td><kbd>+</kbd>/<kbd>=</kbd></td><td>Zoom in</td></tr>
+      <tr><td><kbd>-</kbd></td><td>Zoom out</td></tr>
+      <tr><td><kbd>0</kbd></td><td>Reset zoom &amp; pan</td></tr>
+      <tr><td><kbd>&larr;&uarr;&darr;&rarr;</kbd></td><td>Pan map</td></tr>
     </table>
-    <p>Mouse: left-click select/place &middot; right-click deselect/return &middot; drag from rack to map</p>
+    <p>Mouse: left-click select/place &middot; right-click deselect/return &middot; drag from rack to map<br>
+    Scroll wheel: zoom in/out &middot; Right-drag, middle-drag, or Shift+drag: pan</p>
 
     <h3>Coming Soon</h3>
     <table>
@@ -1107,6 +1142,23 @@ function hasSpotter(side, targetCol, targetRow) {
 const canvas = document.getElementById('map');
 const ctx = canvas.getContext('2d');
 
+// Zoom and pan state
+let viewZoom = 1.0;
+let viewPanX = 0, viewPanY = 0;
+let isPanning = false;
+let panStartX = 0, panStartY = 0;
+let panStartViewX = 0, panStartViewY = 0;
+
+function screenToWorld(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  const px = clientX - rect.left;
+  const py = clientY - rect.top;
+  return {
+    x: (px - viewPanX) / viewZoom,
+    y: (py - viewPanY) / viewZoom
+  };
+}
+
 function resizeCanvas() {
   const container = document.getElementById('map-container');
   const rackEl = document.getElementById('rack-container');
@@ -1116,7 +1168,12 @@ function resizeCanvas() {
   canvas.height = availH * devicePixelRatio;
   canvas.style.width = container.clientWidth + 'px';
   canvas.style.height = availH + 'px';
-  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  applyViewTransform();
+}
+
+function applyViewTransform() {
+  const dpr = devicePixelRatio;
+  ctx.setTransform(dpr * viewZoom, 0, 0, dpr * viewZoom, viewPanX * dpr, viewPanY * dpr);
 }
 
 function drawHex(cx, cy, size, fillColor, strokeColor) {
@@ -1220,14 +1277,16 @@ function drawMap() {
     }
   }
 
-  // Coordinate labels
-  ctx.font = '8px Courier New';
-  ctx.fillStyle = 'rgba(255,255,255,0.15)';
-  ctx.textAlign = 'center';
-  for (let c = 0; c < MAP_COLS; c++) {
-    for (let r = 0; r < MAP_ROWS; r++) {
-      const { x, y } = hexToPixel(c, r);
-      ctx.fillText(c + ',' + r, x, y + HEX_SIZE - 4);
+  // Coordinate labels (hidden when zoomed out)
+  if (viewZoom >= 0.6) {
+    ctx.font = '8px Courier New';
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.textAlign = 'center';
+    for (let c = 0; c < MAP_COLS; c++) {
+      for (let r = 0; r < MAP_ROWS; r++) {
+        const { x, y } = hexToPixel(c, r);
+        ctx.fillText(c + ',' + r, x, y + HEX_SIZE - 4);
+      }
     }
   }
 }
@@ -1312,8 +1371,53 @@ function drawOverlays() {
   }
 }
 
+function drawUnitSymbol(cx, cy, w, h, unitClass) {
+  // Draw NATO APP-6 tactical symbol in subdued color
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+  ctx.fillStyle = 'rgba(255,255,255,0.18)';
+  ctx.lineWidth = 1;
+  const sw = w * 0.5, sh = h * 0.35;
+  switch (unitClass) {
+    case INF: // Crossed diagonals (X)
+      ctx.beginPath();
+      ctx.moveTo(cx - sw, cy - sh); ctx.lineTo(cx + sw, cy + sh);
+      ctx.moveTo(cx + sw, cy - sh); ctx.lineTo(cx - sw, cy + sh);
+      ctx.stroke();
+      break;
+    case ARM: // Oval/ellipse
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, sw, sh, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      break;
+    case MECH: // X inside oval
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, sw, sh, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - sw * 0.6, cy - sh * 0.6); ctx.lineTo(cx + sw * 0.6, cy + sh * 0.6);
+      ctx.moveTo(cx + sw * 0.6, cy - sh * 0.6); ctx.lineTo(cx - sw * 0.6, cy + sh * 0.6);
+      ctx.stroke();
+      break;
+    case AT_GUN: // Vertical line (gun barrel)
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - sh); ctx.lineTo(cx, cy + sh);
+      ctx.stroke();
+      break;
+    case ART: // Filled circle (dot)
+      ctx.beginPath();
+      ctx.arc(cx, cy, Math.min(sw, sh) * 0.6, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    case RECON: // Single diagonal slash
+      ctx.beginPath();
+      ctx.moveTo(cx - sw, cy + sh); ctx.lineTo(cx + sw, cy - sh);
+      ctx.stroke();
+      break;
+  }
+}
+
 function drawUnitCounter(ux, uy, u, utype) {
-  const w = 28, h = 20;
+  const w = 36, h = 26;
   const isGerman = u.side === GERMAN;
   let bgColor = isGerman ? '#5a5a5a' : '#4a6a3a';
   let textColor = isGerman ? '#ddd' : '#dfd';
@@ -1336,14 +1440,17 @@ function drawUnitCounter(ux, uy, u, utype) {
   ctx.lineWidth = u.id === state.selectedUnitId ? 2 : 1;
   ctx.strokeRect(ux - w/2, uy - h/2, w, h);
 
-  ctx.font = 'bold 8px Courier New';
+  // Draw NATO symbol in background between name and stats
+  drawUnitSymbol(ux, uy, w, h, utype.class);
+
+  ctx.font = 'bold 9px Courier New';
   ctx.fillStyle = textColor;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  ctx.fillText(utype.name.substring(0, 5), ux, uy - h/2 + 1);
+  ctx.fillText(utype.name.substring(0, 6), ux, uy - h/2 + 1);
 
-  ctx.font = '7px Courier New';
-  ctx.fillText(utype.at + '/' + utype.df, ux, uy + 2);
+  ctx.font = '8px Courier New';
+  ctx.fillText(utype.at + '/' + utype.df, ux, uy + 4);
 
   if (utype.armored) {
     ctx.strokeStyle = textColor;
@@ -1371,8 +1478,8 @@ function drawUnits() {
     for (let i = 0; i < count; i++) {
       const u = units[i];
       const utype = UNIT_TYPES[u.type];
-      const ox = (i - (count - 1) / 2) * 3;
-      const oy = (i - (count - 1) / 2) * 3;
+      const ox = (i - (count - 1) / 2) * 4;
+      const oy = (i - (count - 1) / 2) * 4;
       drawUnitCounter(x + ox, y + oy, u, utype);
     }
 
@@ -1387,7 +1494,11 @@ function drawUnits() {
 }
 
 function render() {
+  // Reset transform to clear full canvas
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
   ctx.clearRect(0, 0, canvas.width / devicePixelRatio, canvas.height / devicePixelRatio);
+  // Apply zoom/pan transform
+  applyViewTransform();
   drawMap();
   drawOverlays();
   drawUnits();
@@ -1874,10 +1985,9 @@ function sideLabel(side) {
 // ═══════════════════════════════════════════
 
 canvas.addEventListener('click', (e) => {
-  const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-  const hex = pixelToHex(x, y);
+  if (isPanning) return;
+  const w = screenToWorld(e.clientX, e.clientY);
+  const hex = pixelToHex(w.x, w.y);
   if (!hex) return;
 
   handleHexClick(hex.col, hex.row);
@@ -1885,14 +1995,14 @@ canvas.addEventListener('click', (e) => {
 
 canvas.addEventListener('contextmenu', (e) => {
   e.preventDefault();
+  // If we just finished a right-drag pan, don't process as a right-click action
+  if (panDidMove) { panDidMove = false; return; }
   const isPlacing = state.phase === PHASE_PLACEMENT || state.phase === PHASE_REINFORCEMENT;
 
   if (isPlacing) {
     // Right-click on placed unit during placement: return to rack
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const hex = pixelToHex(x, y);
+    const w = screenToWorld(e.clientX, e.clientY);
+    const hex = pixelToHex(w.x, w.y);
     if (hex) {
       const units = getUnitsAt(hex.col, hex.row).filter(u => u.side === state.activeSide);
       if (units.length > 0) {
@@ -1986,8 +2096,8 @@ function handleHexClick(col, row) {
 canvas.addEventListener('dragover', (e) => {
   e.preventDefault();
   e.dataTransfer.dropEffect = 'move';
-  const rect = canvas.getBoundingClientRect();
-  const hex = pixelToHex(e.clientX - rect.left, e.clientY - rect.top);
+  const w = screenToWorld(e.clientX, e.clientY);
+  const hex = pixelToHex(w.x, w.y);
   state.hoverHex = hex;
 });
 
@@ -1997,8 +2107,17 @@ canvas.addEventListener('dragleave', () => {
 
 // General mouse hover tracking
 canvas.addEventListener('mousemove', (e) => {
-  const rect = canvas.getBoundingClientRect();
-  const hex = pixelToHex(e.clientX - rect.left, e.clientY - rect.top);
+  // Handle panning
+  if (isPanning) {
+    const dx = e.clientX - panStartX;
+    const dy = e.clientY - panStartY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) panDidMove = true;
+    viewPanX = panStartViewX + dx;
+    viewPanY = panStartViewY + dy;
+    return;
+  }
+  const w = screenToWorld(e.clientX, e.clientY);
+  const hex = pixelToHex(w.x, w.y);
   state.mouseHex = hex;
 });
 canvas.addEventListener('mouseleave', () => {
@@ -2011,11 +2130,53 @@ canvas.addEventListener('drop', (e) => {
   const rackIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
   if (isNaN(rackIndex)) return;
 
-  const rect = canvas.getBoundingClientRect();
-  const hex = pixelToHex(e.clientX - rect.left, e.clientY - rect.top);
+  const w = screenToWorld(e.clientX, e.clientY);
+  const hex = pixelToHex(w.x, w.y);
   if (!hex) return;
 
   placeUnitFromRack(rackIndex, hex.col, hex.row);
+});
+
+// Mouse wheel zoom (toward cursor)
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+
+  const oldZoom = viewZoom;
+  const factor = e.deltaY > 0 ? 0.9 : 1.1;
+  viewZoom = Math.min(2.5, Math.max(0.4, viewZoom * factor));
+
+  // Adjust pan so point under cursor stays stable
+  viewPanX = mx - (mx - viewPanX) * (viewZoom / oldZoom);
+  viewPanY = my - (my - viewPanY) * (viewZoom / oldZoom);
+}, { passive: false });
+
+// Pan: middle-click, shift+left-click, or right-click drag
+let panDidMove = false;
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button === 1 || (e.button === 0 && e.shiftKey) || e.button === 2) {
+    e.preventDefault();
+    isPanning = true;
+    panDidMove = false;
+    panStartX = e.clientX;
+    panStartY = e.clientY;
+    panStartViewX = viewPanX;
+    panStartViewY = viewPanY;
+    canvas.style.cursor = 'grabbing';
+  }
+});
+
+window.addEventListener('mouseup', (e) => {
+  if (isPanning) {
+    isPanning = false;
+    canvas.style.cursor = 'crosshair';
+    // If right-click dragged, suppress the context menu
+    if (e.button === 2 && panDidMove) {
+      e.preventDefault();
+    }
+  }
 });
 
 document.addEventListener('keydown', (e) => {
@@ -2056,6 +2217,22 @@ document.addEventListener('keydown', (e) => {
     state.selectedRackIndex = -1;
     renderRack();
     updateUI();
+  } else if (e.key === 'ArrowLeft') {
+    e.preventDefault(); viewPanX += 60;
+  } else if (e.key === 'ArrowRight') {
+    e.preventDefault(); viewPanX -= 60;
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault(); viewPanY += 60;
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault(); viewPanY -= 60;
+  } else if (e.key === '+' || e.key === '=') {
+    viewZoom = Math.min(2.5, viewZoom * 1.15);
+  } else if (e.key === '-') {
+    viewZoom = Math.max(0.4, viewZoom * 0.87);
+  } else if (e.key === '0') {
+    viewZoom = 1.0;
+    viewPanX = 0;
+    viewPanY = 0;
   }
 });
 
@@ -2321,6 +2498,19 @@ function startScenario(loadFn, scenarioName) {
 
 function init() {
   window.addEventListener('resize', () => { resizeCanvas(); });
+
+  // Zoom control buttons
+  document.getElementById('btn-zoom-in').addEventListener('click', () => {
+    viewZoom = Math.min(2.5, viewZoom * 1.2);
+  });
+  document.getElementById('btn-zoom-out').addEventListener('click', () => {
+    viewZoom = Math.max(0.4, viewZoom * 0.83);
+  });
+  document.getElementById('btn-zoom-reset').addEventListener('click', () => {
+    viewZoom = 1.0;
+    viewPanX = 0;
+    viewPanY = 0;
+  });
 
   document.getElementById('card-cobra').addEventListener('click', () => {
     startScenario(loadTestScenario, 'Cobra Engagement');
