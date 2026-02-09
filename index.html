@@ -218,6 +218,61 @@ canvas { display: block; cursor: crosshair; flex: 1; }
 }
 #export-modal .btn-skip:hover { background: #555; }
 
+/* Objectives panel */
+#objectives-panel { padding: 8px 12px; border-bottom: 2px solid #555; }
+#objectives-toggle { font-size: 13px; color: #aaa; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px; cursor: pointer; user-select: none; }
+#objectives-body.collapsed { display: none; }
+.obj-row { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; }
+.obj-name { color: #d4a84e; }
+.obj-allied { color: #8ab86e; }
+.obj-german { color: #b0b0b0; }
+.obj-neutral { color: #666; }
+.obj-divider { border-top: 1px solid #444; margin: 4px 0; }
+.obj-summary { font-size: 11px; color: #999; padding: 1px 0; }
+
+/* Victory modal */
+#victory-modal {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.8);
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+}
+#victory-modal.visible { display: flex; }
+#victory-modal .modal-box {
+  background: #2a2a28;
+  border: 2px solid #d4a84e;
+  padding: 28px 32px;
+  max-width: 460px;
+  text-align: center;
+}
+#victory-modal h2 {
+  font-size: 22px;
+  color: #d4a84e;
+  margin-bottom: 12px;
+}
+#victory-modal .modal-info {
+  font-size: 13px;
+  color: #ccc;
+  margin-bottom: 18px;
+  white-space: pre-line;
+  line-height: 1.5;
+}
+#victory-modal button {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid #666;
+  background: #444;
+  color: #e0dcc8;
+}
+#victory-modal button:hover { background: #555; }
+
 /* Zoom controls */
 #zoom-controls {
   position: absolute;
@@ -288,6 +343,10 @@ canvas { display: block; cursor: crosshair; flex: 1; }
   <div id="unit-info">
     <h3>Unit Info</h3>
     <div id="unit-details"><i style="color:#666">Select a unit from the rack to place it</i></div>
+  </div>
+  <div id="objectives-panel">
+    <h3 id="objectives-toggle">Objectives [V]</h3>
+    <div id="objectives-body"></div>
   </div>
   <div id="actions">
     <button id="btn-fire" disabled>Fire at Target [F]</button>
@@ -435,6 +494,14 @@ canvas { display: block; cursor: crosshair; flex: 1; }
   </div>
 </div>
 
+<div id="victory-modal">
+  <div class="modal-box">
+    <h2 id="victory-title"></h2>
+    <div class="modal-info" id="victory-details"></div>
+    <button id="btn-victory-ok">Continue Viewing</button>
+  </div>
+</div>
+
 <script>
 // ═══════════════════════════════════════════
 // SECTION 1: CONSTANTS & DATA
@@ -571,6 +638,10 @@ let state = {
   mouseHex: null,          // { col, row } for general mouse hover
   placementOrder: [ALLIED, GERMAN],  // which side places first, then second
   scenarioName: '',
+  victoryConditions: null,
+  alliedLosses: 0,
+  germanLosses: 0,
+  objectivesPanelOpen: true,
 };
 
 let nextUnitId = 1;
@@ -723,6 +794,21 @@ function loadTestScenario() {
 
   state.selectedRackIndex = -1;
   state.selectedUnitId = null;
+  state.alliedLosses = 0;
+  state.germanLosses = 0;
+  state.victoryConditions = {
+    turnLimit: 8,
+    objectives: [
+      { name: 'Crossroads', hexes: ['12,9','13,9','11,9'], holder: null },
+      { name: 'North Road Jcn', hexes: ['6,5','7,5'], holder: null },
+      { name: 'East Village', hexes: ['18,3','19,3'], holder: null },
+      { name: 'South Village', hexes: ['4,14','5,14'], holder: null },
+      { name: 'Hill Town', hexes: ['10,13','11,13'], holder: null },
+    ],
+    alliedWin: { objectivesNeeded: 3, maxAlliedLosses: 8 },
+    germanWin: { objectivesHeld: 3, maxGermanLosses: null },
+    winner: null,
+  };
 }
 
 // ═══════════════════════════════════════════
@@ -991,6 +1077,21 @@ function loadOmahaScenario() {
 
   state.selectedRackIndex = -1;
   state.selectedUnitId = null;
+  state.alliedLosses = 0;
+  state.germanLosses = 0;
+  state.victoryConditions = {
+    turnLimit: 6,
+    objectives: [
+      { name: 'Vierville', hexes: ['3,6','4,6','5,6'], holder: null, type: 'town' },
+      { name: 'St-Laurent', hexes: ['15,6','16,6','17,6'], holder: null, type: 'town' },
+      { name: 'Colleville', hexes: ['22,6','23,6','24,6'], holder: null, type: 'town' },
+      { name: 'Exit D-1', hexes: ['3,7','4,7'], holder: null, type: 'exit' },
+      { name: 'Exit E-1', hexes: ['16,7','17,7'], holder: null, type: 'exit' },
+    ],
+    alliedWin: { townsNeeded: 2, exitsNeeded: 1, maxAlliedLosses: 20 },
+    germanWin: {},
+    winner: null,
+  };
 }
 
 // Populate rack for a given side from reinforcements pool for a given turn
@@ -1359,6 +1460,32 @@ function drawOverlays() {
         drawHex(x, y, HEX_SIZE - 2, 'rgba(180,100,60,0.25)', 'rgba(180,100,60,0.7)');
       }
     });
+  }
+
+  // Objective hex markers
+  if (state.victoryConditions) {
+    for (const obj of state.victoryConditions.objectives) {
+      for (const key of obj.hexes) {
+        const [c, r] = key.split(',').map(Number);
+        const { x, y } = hexToPixel(c, r);
+        // Draw small diamond marker
+        ctx.save();
+        ctx.beginPath();
+        const s = 5;
+        ctx.moveTo(x, y - s);
+        ctx.lineTo(x + s, y);
+        ctx.lineTo(x, y + s);
+        ctx.lineTo(x - s, y);
+        ctx.closePath();
+        ctx.fillStyle = '#d4a84e';
+        ctx.globalAlpha = 0.7;
+        ctx.fill();
+        ctx.strokeStyle = '#a07830';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
   }
 
   // Selected hex highlight (for placed units)
@@ -1746,6 +1873,16 @@ function applyCombatResult(result, attacker, defender) {
       break;
   }
 
+  // Track losses
+  if (attacker.destroyed) {
+    if (attacker.side === ALLIED) state.alliedLosses++;
+    else state.germanLosses++;
+  }
+  if (defender.destroyed) {
+    if (defender.side === ALLIED) state.alliedLosses++;
+    else state.germanLosses++;
+  }
+
   if (attacker.destroyed && attacker.id === state.selectedUnitId) {
     selectUnit(null);
   }
@@ -1776,6 +1913,145 @@ function retreatUnit(unit, awayFrom) {
 function checkReinforcements(side) {
   // Check if there are reinforcements for this side on this turn
   return state.allReinforcements.some(e => e.side === side && e.availableTurn === state.turn);
+}
+
+function updateObjectiveControl() {
+  const vc = state.victoryConditions;
+  if (!vc) return;
+  for (const obj of vc.objectives) {
+    let alliedPresent = false, germanPresent = false;
+    for (const key of obj.hexes) {
+      const [c, r] = key.split(',').map(Number);
+      const units = getUnitsAt(c, r);
+      for (const u of units) {
+        if (u.destroyed) continue;
+        if (u.side === ALLIED) alliedPresent = true;
+        else germanPresent = true;
+      }
+    }
+    if (alliedPresent && !germanPresent) obj.holder = ALLIED;
+    else if (germanPresent && !alliedPresent) obj.holder = GERMAN;
+    else obj.holder = null;
+  }
+}
+
+function checkVictory() {
+  const vc = state.victoryConditions;
+  if (!vc || vc.winner) return null;
+
+  const isOmaha = vc.alliedWin.townsNeeded !== undefined;
+
+  if (isOmaha) {
+    // Immediate loss: Allied losses reach threshold
+    if (state.alliedLosses >= vc.alliedWin.maxAlliedLosses) {
+      return 'german';
+    }
+    // Check at turn limit
+    if (state.turn >= vc.turnLimit) {
+      const towns = vc.objectives.filter(o => o.type === 'town' && o.holder === ALLIED).length;
+      const exits = vc.objectives.filter(o => o.type === 'exit' && o.holder === ALLIED).length;
+      if (towns >= vc.alliedWin.townsNeeded && exits >= vc.alliedWin.exitsNeeded) {
+        return 'allied';
+      }
+      return 'german';
+    }
+  } else {
+    // Cobra: immediate loss if Allied losses reach threshold
+    if (state.alliedLosses >= vc.alliedWin.maxAlliedLosses) {
+      return 'german';
+    }
+    // Check at turn limit
+    if (state.turn >= vc.turnLimit) {
+      const alliedHeld = vc.objectives.filter(o => o.holder === ALLIED).length;
+      const germanHeld = vc.objectives.filter(o => o.holder === GERMAN).length;
+      if (alliedHeld >= vc.alliedWin.objectivesNeeded && state.alliedLosses < vc.alliedWin.maxAlliedLosses) {
+        return 'allied';
+      }
+      if (germanHeld >= vc.germanWin.objectivesHeld) {
+        return 'german';
+      }
+      // Default: if allies didn't meet their conditions, German wins
+      return 'german';
+    }
+  }
+  return null;
+}
+
+function showVictoryModal(winner) {
+  const vc = state.victoryConditions;
+  vc.winner = winner;
+  const title = winner === ALLIED ? 'Allied Victory!' : 'German Victory!';
+  document.getElementById('victory-title').textContent = title;
+
+  const isOmaha = vc.alliedWin.townsNeeded !== undefined;
+  let details = '';
+
+  const alliedHeld = vc.objectives.filter(o => o.holder === ALLIED);
+  const germanHeld = vc.objectives.filter(o => o.holder === GERMAN);
+
+  if (isOmaha) {
+    const towns = vc.objectives.filter(o => o.type === 'town' && o.holder === ALLIED).length;
+    const exits = vc.objectives.filter(o => o.type === 'exit' && o.holder === ALLIED).length;
+    if (winner === ALLIED) {
+      details = `The Allies secured ${towns} town(s) and ${exits} exit(s), establishing the beachhead.`;
+    } else if (state.alliedLosses >= vc.alliedWin.maxAlliedLosses) {
+      details = `Allied losses reached ${state.alliedLosses} — the assault has been repulsed.`;
+    } else {
+      details = `The Allies failed to secure enough objectives. Towns: ${towns}/${vc.alliedWin.townsNeeded}, Exits: ${exits}/${vc.alliedWin.exitsNeeded}.`;
+    }
+  } else {
+    if (winner === ALLIED) {
+      details = `The Allies control ${alliedHeld.length} objective(s) with only ${state.alliedLosses} losses.`;
+    } else if (state.alliedLosses >= vc.alliedWin.maxAlliedLosses) {
+      details = `Allied losses reached ${state.alliedLosses} — the attack has stalled.`;
+    } else {
+      details = `Germany holds ${germanHeld.length} objective(s). The Allied advance has been stopped.`;
+    }
+  }
+  details += `\n\nAllied losses: ${state.alliedLosses} | German losses: ${state.germanLosses}`;
+  details += `\nTurn ${state.turn} of ${vc.turnLimit}`;
+
+  document.getElementById('victory-details').textContent = details;
+  document.getElementById('victory-modal').classList.add('visible');
+  addLog(`*** ${title} ***`, 'log-phase');
+}
+
+function updateObjectivesPanel() {
+  const vc = state.victoryConditions;
+  const body = document.getElementById('objectives-body');
+  if (!vc || !body) return;
+
+  const isOmaha = vc.alliedWin.townsNeeded !== undefined;
+  let html = '';
+
+  for (const obj of vc.objectives) {
+    let holderText, holderClass;
+    if (obj.holder === ALLIED) { holderText = 'Allied'; holderClass = 'obj-allied'; }
+    else if (obj.holder === GERMAN) { holderText = 'German'; holderClass = 'obj-german'; }
+    else { holderText = '\u2014'; holderClass = 'obj-neutral'; }
+    html += `<div class="obj-row"><span class="obj-name">${obj.name}</span><span class="${holderClass}">${holderText}</span></div>`;
+  }
+
+  html += '<div class="obj-divider"></div>';
+
+  if (isOmaha) {
+    const towns = vc.objectives.filter(o => o.type === 'town' && o.holder === ALLIED).length;
+    const exits = vc.objectives.filter(o => o.type === 'exit' && o.holder === ALLIED).length;
+    html += `<div class="obj-summary">Allied: ${towns}/${vc.alliedWin.townsNeeded} towns, ${exits}/${vc.alliedWin.exitsNeeded} exits | Losses: ${state.alliedLosses}/${vc.alliedWin.maxAlliedLosses}</div>`;
+    html += `<div class="obj-summary">German losses: ${state.germanLosses}</div>`;
+  } else {
+    const alliedHeld = vc.objectives.filter(o => o.holder === ALLIED).length;
+    const germanHeld = vc.objectives.filter(o => o.holder === GERMAN).length;
+    html += `<div class="obj-summary">Allied: ${alliedHeld}/${vc.alliedWin.objectivesNeeded} needed | Losses: ${state.alliedLosses}/${vc.alliedWin.maxAlliedLosses}</div>`;
+    html += `<div class="obj-summary">German: ${germanHeld} held | Losses: ${state.germanLosses}</div>`;
+  }
+  html += `<div class="obj-summary">Turn ${state.turn} of ${vc.turnLimit}</div>`;
+
+  if (vc.winner) {
+    html += `<div class="obj-summary" style="color:#d4a84e;font-weight:bold;margin-top:4px">${vc.winner === ALLIED ? 'Allied' : 'German'} Victory</div>`;
+  }
+
+  body.innerHTML = html;
 }
 
 function advancePhase() {
@@ -1850,6 +2126,12 @@ function advancePhase() {
         u.moved = false;
       }
     }
+    updateObjectiveControl();
+    const winner = checkVictory();
+    if (winner) {
+      showVictoryModal(winner);
+      return;
+    }
     finishPhaseAdvance();
     showExportModal();
   }
@@ -1875,6 +2157,9 @@ function exportGameState() {
     MAP_COLS: MAP_COLS,
     MAP_ROWS: MAP_ROWS,
     battleLog: document.getElementById('log-entries').innerHTML,
+    victoryConditions: state.victoryConditions,
+    alliedLosses: state.alliedLosses,
+    germanLosses: state.germanLosses,
   };
   const json = JSON.stringify(data);
   const encoded = btoa(unescape(encodeURIComponent(json)));
@@ -1923,6 +2208,11 @@ function importGameState(encoded) {
   state.selectedRackIndex = -1;
   state.hoverHex = null;
   state.mouseHex = null;
+
+  // Restore victory state
+  state.victoryConditions = data.victoryConditions || null;
+  state.alliedLosses = data.alliedLosses || 0;
+  state.germanLosses = data.germanLosses || 0;
 
   // Restore battle log
   if (data.battleLog) {
@@ -2205,9 +2495,16 @@ document.addEventListener('keydown', (e) => {
     } else {
       selectNextUnit();
     }
+  } else if (e.key === 'v' || e.key === 'V') {
+    toggleObjectivesPanel();
   } else if (e.key === '?') {
     toggleRulesPanel();
   } else if (e.key === 'Escape') {
+    const vm = document.getElementById('victory-modal');
+    if (vm.classList.contains('visible')) {
+      vm.classList.remove('visible');
+      return;
+    }
     const rp = document.getElementById('rules-panel');
     if (rp.classList.contains('visible')) {
       rp.classList.remove('visible');
@@ -2235,6 +2532,13 @@ document.addEventListener('keydown', (e) => {
     viewPanY = 0;
   }
 });
+
+function toggleObjectivesPanel() {
+  state.objectivesPanelOpen = !state.objectivesPanelOpen;
+  const body = document.getElementById('objectives-body');
+  if (body) body.classList.toggle('collapsed', !state.objectivesPanelOpen);
+}
+document.getElementById('objectives-toggle').addEventListener('click', toggleObjectivesPanel);
 
 function toggleRulesPanel() {
   document.getElementById('rules-panel').classList.toggle('visible');
@@ -2458,6 +2762,10 @@ function updateUI() {
     if (state.moveMode) btnMove.className = 'active';
   }
 
+  // Objectives panel
+  updateObjectiveControl();
+  updateObjectivesPanel();
+
   // Help text
   const helpEl = document.getElementById('help-text');
   if (isPlacing) {
@@ -2541,6 +2849,11 @@ function init() {
       }
     };
     reader.readAsText(file);
+  });
+
+  // Victory modal button
+  document.getElementById('btn-victory-ok').addEventListener('click', () => {
+    document.getElementById('victory-modal').classList.remove('visible');
   });
 
   // Export modal buttons
