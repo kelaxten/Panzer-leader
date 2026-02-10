@@ -1576,12 +1576,20 @@ function drawOverlays() {
     drawHex(x, y, HEX_SIZE - 1, 'rgba(0,0,0,0)', 'rgba(255,255,255,0.25)');
   }
 
-  // Movement range overlay
+  // Movement range overlay with remaining MP
   if (state.moveMode && state.reachableHexes) {
     state.reachableHexes.forEach((mp, key) => {
       const [c, r] = key.split(',').map(Number);
       const { x, y } = hexToPixel(c, r);
       drawHex(x, y, HEX_SIZE - 2, 'rgba(100,200,100,0.3)', 'rgba(100,200,100,0.7)');
+      // Show remaining MP on hex
+      if (viewZoom >= 0.5) {
+        ctx.font = 'bold 8px Courier New';
+        ctx.fillStyle = 'rgba(200,255,200,0.9)';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(mp + ' MP', x, y + HEX_SIZE - 4);
+      }
     });
   }
 
@@ -1695,6 +1703,10 @@ function drawUnitCounter(ux, uy, u, utype) {
   let textColor = isGerman ? '#ddd' : '#dfd';
   let borderColor = isGerman ? '#888' : '#6a8a5a';
 
+  const isActive = u.side === state.activeSide;
+  const isCombatOrMove = state.phase === PHASE_COMBAT || state.phase === PHASE_MOVEMENT;
+  const canAct = isActive && isCombatOrMove && !u.fired && !u.moved;
+
   if (u.fired) {
     bgColor = isGerman ? '#3a3a3a' : '#2a4a2a';
     borderColor = '#d44';
@@ -1704,6 +1716,14 @@ function drawUnitCounter(ux, uy, u, utype) {
   }
   if (u.id === state.selectedUnitId) {
     borderColor = '#ff0';
+  }
+
+  // Draw glow behind available (un-acted) friendly units
+  if (canAct && u.id !== state.selectedUnitId) {
+    const pulse = 0.4 + 0.3 * Math.sin(Date.now() / 400);
+    ctx.strokeStyle = isGerman ? `rgba(200,200,255,${pulse})` : `rgba(150,255,150,${pulse})`;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(ux - w/2 - 1, uy - h/2 - 1, w + 2, h + 2);
   }
 
   ctx.fillStyle = bgColor;
@@ -2016,7 +2036,8 @@ function showAttackPreview(preview) {
   html += `<div class="preview-detail">Attack: ${preview.attackFactor} ${preview.dtype.armored ? '(AT)' : '(AP)'}${preview.observeLabel ? ' [' + preview.observeLabel + ']' : ''}</div>`;
   html += `<div class="preview-detail">Defense: ${preview.dtype.df} x${preview.terrainMod} (${preview.terrainName}) = ${preview.defenseFactor}</div>`;
   html += `<div class="preview-outcomes">${outcomesHtml}</div>`;
-  html += `<div class="preview-hint">Click target hex again to confirm, Esc to cancel</div>`;
+  const hintText = state.pendingFire ? 'Click again to confirm, Esc to cancel' : 'Click target to lock in, Esc to cancel';
+  html += `<div class="preview-hint">${hintText}</div>`;
 
   content.innerHTML = html;
   el.classList.add('visible');
@@ -2691,10 +2712,26 @@ canvas.addEventListener('mousemove', (e) => {
   }
   const w = screenToWorld(e.clientX, e.clientY);
   const hex = pixelToHex(w.x, w.y);
+  const prevHex = state.mouseHex;
   state.mouseHex = hex;
+
+  // Show attack preview on hover when in fire mode (before first click)
+  if (state.fireMode && !state.pendingFire && hex && state.targetableHexes) {
+    const key = hexKey(hex.col, hex.row);
+    if (state.targetableHexes.has(key)) {
+      const unit = getSelectedUnit();
+      if (unit) {
+        const preview = calcAttackPreview(unit, hex.col, hex.row);
+        showAttackPreview(preview);
+      }
+    } else if (!prevHex || !hex || prevHex.col !== hex.col || prevHex.row !== hex.row) {
+      hideAttackPreview();
+    }
+  }
 });
 canvas.addEventListener('mouseleave', () => {
   state.mouseHex = null;
+  if (state.fireMode && !state.pendingFire) hideAttackPreview();
 });
 
 canvas.addEventListener('drop', (e) => {
@@ -2783,6 +2820,12 @@ document.addEventListener('keydown', (e) => {
   } else if (e.key === '?') {
     toggleRulesPanel();
   } else if (e.key === 'Escape') {
+    // Dismiss modals first
+    const cm = document.getElementById('confirm-modal');
+    if (cm.classList.contains('visible')) {
+      cm.classList.remove('visible');
+      return;
+    }
     const vm = document.getElementById('victory-modal');
     if (vm.classList.contains('visible')) {
       vm.classList.remove('visible');
@@ -2791,6 +2834,17 @@ document.addEventListener('keydown', (e) => {
     const rp = document.getElementById('rules-panel');
     if (rp.classList.contains('visible')) {
       rp.classList.remove('visible');
+      return;
+    }
+    // Cancel fire/move mode but keep unit selected
+    if (state.fireMode || state.moveMode) {
+      state.fireMode = false;
+      state.moveMode = false;
+      state.reachableHexes = null;
+      state.targetableHexes = null;
+      state.pendingFire = null;
+      hideAttackPreview();
+      updateUI();
       return;
     }
     selectUnit(null);
@@ -3046,6 +3100,24 @@ function updateUI() {
     btnMove.disabled = !canMove;
     btnNext.disabled = !hasAvailable;
     btnEnd.textContent = 'End Phase [Enter]';
+
+    // Dynamic tooltips for disabled buttons
+    if (!canFire) {
+      if (!sel) btnFire.title = 'Select a unit first';
+      else if (state.phase !== PHASE_COMBAT) btnFire.title = 'Only available during Combat phase';
+      else if (sel.fired) btnFire.title = 'Unit already fired this turn';
+      else if (sel.moved) btnFire.title = 'Unit already moved — cannot fire';
+      else if (sel.side !== state.activeSide) btnFire.title = 'Not your unit';
+      else btnFire.title = '';
+    } else { btnFire.title = 'Select a target to fire at'; }
+    if (!canMove) {
+      if (!sel) btnMove.title = 'Select a unit first';
+      else if (state.phase !== PHASE_MOVEMENT) btnMove.title = 'Only available during Movement phase';
+      else if (sel.moved) btnMove.title = 'Unit already moved this turn';
+      else if (sel.fired) btnMove.title = 'Unit already fired — cannot move';
+      else if (sel.side !== state.activeSide) btnMove.title = 'Not your unit';
+      else btnMove.title = '';
+    } else { btnMove.title = 'Enter movement mode to move unit'; }
 
     if (state.fireMode) btnFire.className = 'active';
     if (state.moveMode) btnMove.className = 'active';
