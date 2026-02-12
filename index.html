@@ -614,6 +614,7 @@ canvas { display: block; cursor: crosshair; flex: 1; }
     <h2>Turn Complete!</h2>
     <div class="modal-info" id="export-filename"></div>
     <button class="btn-export" id="btn-export-download">Export &amp; Download Turn File</button>
+    <button class="btn-export" id="btn-export-link">Copy Share Link</button>
     <button class="btn-skip" id="btn-export-skip">Continue Without Export</button>
   </div>
 </div>
@@ -2477,6 +2478,47 @@ function exportGameState() {
   return filename;
 }
 
+async function compressToBase64url(jsonString) {
+  const stream = new Blob([jsonString]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+  const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function decompressFromBase64url(encoded) {
+  const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return await new Response(stream).text();
+}
+
+function buildSharePayload() {
+  return {
+    version: 1,
+    scenarioName: state.scenarioName,
+    units: state.units,
+    turn: state.turn,
+    activeSide: state.activeSide,
+    phase: state.phase,
+    rack: state.rack,
+    allReinforcements: state.allReinforcements,
+    placementOrder: state.placementOrder,
+    placementZones: {
+      [ALLIED]: state.placementZones ? [...state.placementZones[ALLIED]] : [],
+      [GERMAN]: state.placementZones ? [...state.placementZones[GERMAN]] : [],
+    },
+    nextUnitId: nextUnitId,
+    MAP_COLS: MAP_COLS,
+    MAP_ROWS: MAP_ROWS,
+    victoryConditions: state.victoryConditions,
+    alliedLosses: state.alliedLosses,
+    germanLosses: state.germanLosses,
+  };
+}
+
 function importGameState(encoded) {
   const json = decodeURIComponent(escape(atob(encoded)));
   const data = JSON.parse(json);
@@ -3175,6 +3217,34 @@ function startScenario(loadFn, scenarioName) {
 }
 
 function init() {
+  // Check for shared game state in URL hash
+  if (location.hash.length > 1) {
+    decompressFromBase64url(location.hash.slice(1)).then(json => {
+      const data = JSON.parse(json);
+      // Reconstruct map from scenario name
+      const name = data.scenarioName || '';
+      if (name.toLowerCase().includes('omaha')) {
+        MAP_COLS = 30;
+        MAP_ROWS = 20;
+        data.map = generateOmahaMap();
+      } else {
+        MAP_COLS = 24;
+        MAP_ROWS = 18;
+        data.map = generateTestMap();
+      }
+      data.battleLog = '';
+      // Re-encode and import via existing path
+      const reEncoded = btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+      importGameState(reEncoded);
+      document.getElementById('scenario-select').style.display = 'none';
+      addLog('Game loaded from shared link.', 'log-phase');
+      requestAnimationFrame(render);
+      history.replaceState(null, '', location.pathname);
+    }).catch(err => {
+      console.error('Failed to load shared link:', err);
+    });
+  }
+
   window.addEventListener('resize', () => { resizeCanvas(); });
 
   // Zoom control buttons
@@ -3232,6 +3302,24 @@ function init() {
     document.getElementById('export-modal').classList.remove('visible');
     renderRack();
     resizeCanvas();
+  });
+  document.getElementById('btn-export-link').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-export-link');
+    try {
+      const payload = buildSharePayload();
+      const compressed = await compressToBase64url(JSON.stringify(payload));
+      const url = location.origin + location.pathname + '#' + compressed;
+      await navigator.clipboard.writeText(url);
+      btn.textContent = 'Link Copied!';
+      setTimeout(() => { btn.textContent = 'Copy Share Link'; }, 2000);
+      document.getElementById('export-modal').classList.remove('visible');
+      renderRack();
+      resizeCanvas();
+    } catch (err) {
+      btn.textContent = 'Copy failed!';
+      setTimeout(() => { btn.textContent = 'Copy Share Link'; }, 2000);
+      console.error('Share link error:', err);
+    }
   });
   document.getElementById('btn-export-skip').addEventListener('click', () => {
     document.getElementById('export-modal').classList.remove('visible');
