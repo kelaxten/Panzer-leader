@@ -297,6 +297,128 @@ canvas { display: block; cursor: crosshair; flex: 1; }
   padding: 0;
 }
 #zoom-controls button:hover { background: rgba(80,80,80,0.9); color: #fff; }
+
+/* Attack preview panel */
+#attack-preview {
+  display: none;
+  padding: 10px 12px;
+  background: #332820;
+  border: 1px solid #d48a6e;
+  margin: 0 12px 8px;
+  font-size: 12px;
+}
+#attack-preview.visible { display: block; }
+#attack-preview .preview-title {
+  font-size: 11px;
+  color: #aaa;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+#attack-preview .preview-odds {
+  font-size: 18px;
+  font-weight: bold;
+  color: #e0dcc8;
+  margin-bottom: 4px;
+}
+#attack-preview .preview-detail {
+  color: #bbb;
+  margin-bottom: 2px;
+}
+#attack-preview .preview-outcomes {
+  margin-top: 6px;
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+#attack-preview .outcome {
+  padding: 1px 5px;
+  font-size: 10px;
+  border: 1px solid #555;
+  border-radius: 2px;
+}
+.outcome-ae { background: #4a2020; color: #f88; }
+.outcome-ar { background: #4a3020; color: #fb8; }
+.outcome-dr { background: #2a3a20; color: #bf8; }
+.outcome-de { background: #1a3a1a; color: #8f8; }
+.outcome-ex { background: #3a3020; color: #fd8; }
+#attack-preview .preview-hint {
+  margin-top: 6px;
+  font-size: 10px;
+  color: #888;
+}
+.odds-good { color: #8f8; }
+.odds-even { color: #fd8; }
+.odds-bad { color: #f88; }
+
+/* Phase confirmation modal */
+#confirm-modal {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+}
+#confirm-modal.visible { display: flex; }
+#confirm-modal .modal-box {
+  background: #2a2a28;
+  border: 2px solid #666;
+  padding: 24px 28px;
+  max-width: 380px;
+  text-align: center;
+}
+#confirm-modal h2 {
+  font-size: 16px;
+  color: #e0dcc8;
+  margin-bottom: 10px;
+}
+#confirm-modal .modal-info {
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+#confirm-modal button {
+  display: block;
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 6px;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid #666;
+}
+#confirm-modal .btn-confirm {
+  background: #6b8e4e;
+  color: #fff;
+  border-color: #8ab86e;
+}
+#confirm-modal .btn-confirm:hover { background: #7a9e5e; }
+#confirm-modal .btn-cancel {
+  background: #444;
+  color: #e0dcc8;
+}
+#confirm-modal .btn-cancel:hover { background: #555; }
+
+/* Status toast */
+#status-toast {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(40,30,20,0.92);
+  color: #fb8;
+  border: 1px solid #d48a6e;
+  padding: 6px 16px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  z-index: 300;
+  display: none;
+  pointer-events: none;
+}
+#status-toast.visible { display: block; }
 </style>
 </head>
 <body>
@@ -355,6 +477,10 @@ canvas { display: block; cursor: crosshair; flex: 1; }
     <button id="btn-next-unit" disabled>Next Unit [N]</button>
     <button id="btn-end-phase">Done Placing [Enter]</button>
     <button id="btn-rules">[?] Rules</button>
+  </div>
+  <div id="attack-preview">
+    <div class="preview-title">Attack Preview</div>
+    <div id="attack-preview-content"></div>
   </div>
   <div id="battle-log">
     <h3>Battle Log</h3>
@@ -473,13 +599,11 @@ canvas { display: block; cursor: crosshair; flex: 1; }
     <p>Mouse: left-click select/place &middot; right-click deselect/return &middot; drag from rack to map<br>
     Scroll wheel: zoom in/out &middot; Right-drag, middle-drag, or Shift+drag: pan</p>
 
-    <h3>Coming Soon</h3>
+    <h3>Planned Features</h3>
     <table>
       <tr><th>Feature</th><th>Description</th></tr>
-      <tr><td>Play By Email</td><td>At the end of each movement phase, export your turn as a JSON file. Your opponent uploads it via &ldquo;Resume Game&rdquo; to continue.</td></tr>
-      <tr><td>Save / Load</td><td>Serialize game state to localStorage or file</td></tr>
-      <tr><td>Victory Conditions</td><td>Win/loss criteria per scenario (objectives, losses, turn limit)</td></tr>
       <tr><td>Undo</td><td>Undo last action within a phase</td></tr>
+      <tr><td>Save / Load</td><td>Serialize game state to localStorage</td></tr>
       <tr><td>AI Opponent</td><td>Computer-controlled side for solo play</td></tr>
     </table>
   </div>
@@ -501,6 +625,17 @@ canvas { display: block; cursor: crosshair; flex: 1; }
     <button id="btn-victory-ok">Continue Viewing</button>
   </div>
 </div>
+
+<div id="confirm-modal">
+  <div class="modal-box">
+    <h2 id="confirm-title"></h2>
+    <div class="modal-info" id="confirm-info"></div>
+    <button class="btn-confirm" id="btn-confirm-yes">Confirm</button>
+    <button class="btn-cancel" id="btn-confirm-no">Cancel</button>
+  </div>
+</div>
+
+<div id="status-toast"></div>
 
 <script>
 // ═══════════════════════════════════════════
@@ -642,6 +777,7 @@ let state = {
   alliedLosses: 0,
   germanLosses: 0,
   objectivesPanelOpen: true,
+  pendingFire: null,        // { attacker, targetCol, targetRow } awaiting confirmation
 };
 
 let nextUnitId = 1;
@@ -1440,16 +1576,24 @@ function drawOverlays() {
     drawHex(x, y, HEX_SIZE - 1, 'rgba(0,0,0,0)', 'rgba(255,255,255,0.25)');
   }
 
-  // Movement range overlay
+  // Movement range overlay with remaining MP
   if (state.moveMode && state.reachableHexes) {
     state.reachableHexes.forEach((mp, key) => {
       const [c, r] = key.split(',').map(Number);
       const { x, y } = hexToPixel(c, r);
       drawHex(x, y, HEX_SIZE - 2, 'rgba(100,200,100,0.3)', 'rgba(100,200,100,0.7)');
+      // Show remaining MP on hex
+      if (viewZoom >= 0.5) {
+        ctx.font = 'bold 8px Courier New';
+        ctx.fillStyle = 'rgba(200,255,200,0.9)';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(mp + ' MP', x, y + HEX_SIZE - 4);
+      }
     });
   }
 
-  // Fire target overlay
+  // Fire target overlay with terrain defense modifier
   if (state.fireMode && state.targetableHexes) {
     state.targetableHexes.forEach((data, key) => {
       const [c, r] = key.split(',').map(Number);
@@ -1458,6 +1602,15 @@ function drawOverlays() {
         drawHex(x, y, HEX_SIZE - 2, 'rgba(200,80,80,0.3)', 'rgba(200,80,80,0.8)');
       } else {
         drawHex(x, y, HEX_SIZE - 2, 'rgba(180,100,60,0.25)', 'rgba(180,100,60,0.7)');
+      }
+      // Show terrain defense multiplier on target hex
+      const terrainMod = TERRAIN_INFO[state.map[c][r]].dfMod;
+      if (terrainMod > 1) {
+        ctx.font = 'bold 9px Courier New';
+        ctx.fillStyle = '#ff8';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText('x' + terrainMod, x, y - HEX_SIZE + 10);
       }
     });
   }
@@ -1550,6 +1703,10 @@ function drawUnitCounter(ux, uy, u, utype) {
   let textColor = isGerman ? '#ddd' : '#dfd';
   let borderColor = isGerman ? '#888' : '#6a8a5a';
 
+  const isActive = u.side === state.activeSide;
+  const isCombatOrMove = state.phase === PHASE_COMBAT || state.phase === PHASE_MOVEMENT;
+  const canAct = isActive && isCombatOrMove && !u.fired && !u.moved;
+
   if (u.fired) {
     bgColor = isGerman ? '#3a3a3a' : '#2a4a2a';
     borderColor = '#d44';
@@ -1559,6 +1716,14 @@ function drawUnitCounter(ux, uy, u, utype) {
   }
   if (u.id === state.selectedUnitId) {
     borderColor = '#ff0';
+  }
+
+  // Draw glow behind available (un-acted) friendly units
+  if (canAct && u.id !== state.selectedUnitId) {
+    const pulse = 0.4 + 0.3 * Math.sin(Date.now() / 400);
+    ctx.strokeStyle = isGerman ? `rgba(200,200,255,${pulse})` : `rgba(150,255,150,${pulse})`;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(ux - w/2 - 1, uy - h/2 - 1, w + 2, h + 2);
   }
 
   ctx.fillStyle = bgColor;
@@ -1585,6 +1750,16 @@ function drawUnitCounter(ux, uy, u, utype) {
     ctx.beginPath();
     ctx.ellipse(ux, uy, w/2 - 1, h/2 - 1, 0, 0, Math.PI * 2);
     ctx.stroke();
+  }
+
+  // Draw fired/moved indicator dot in top-right corner
+  if (u.fired || u.moved) {
+    const dotX = ux + w/2 - 4;
+    const dotY = uy - h/2 + 4;
+    ctx.fillStyle = u.fired ? '#f44' : '#66f';
+    ctx.beginPath();
+    ctx.arc(dotX, dotY, 3, 0, Math.PI * 2);
+    ctx.fill();
   }
 }
 
@@ -1652,6 +1827,8 @@ function selectUnit(unit) {
   state.fireMode = false;
   state.reachableHexes = null;
   state.targetableHexes = null;
+  state.pendingFire = null;
+  hideAttackPreview();
   updateUI();
 }
 
@@ -1662,6 +1839,8 @@ function selectRackUnit(index) {
   state.fireMode = false;
   state.reachableHexes = null;
   state.targetableHexes = null;
+  state.pendingFire = null;
+  hideAttackPreview();
   updateUI();
 }
 
@@ -1717,9 +1896,11 @@ function returnUnitToRack(unit) {
 
 function enterMoveMode() {
   const unit = getSelectedUnit();
-  if (!unit || unit.side !== state.activeSide) return;
-  if (state.phase !== PHASE_MOVEMENT) return;
-  if (unit.moved || unit.fired) return;
+  if (!unit) { showToast('Select a unit first'); return; }
+  if (unit.side !== state.activeSide) { showToast('Not your unit'); return; }
+  if (state.phase !== PHASE_MOVEMENT) { showToast('Can only move during Movement phase'); return; }
+  if (unit.moved) { showToast('Unit already moved this turn'); return; }
+  if (unit.fired) { showToast('Unit already fired — cannot move'); return; }
 
   state.moveMode = true;
   state.fireMode = false;
@@ -1730,12 +1911,14 @@ function enterMoveMode() {
 
 function enterFireMode() {
   const unit = getSelectedUnit();
-  if (!unit || unit.side !== state.activeSide) return;
-  if (state.phase !== PHASE_COMBAT) return;
-  if (unit.fired || unit.moved) return;
+  if (!unit) { showToast('Select a unit first'); return; }
+  if (unit.side !== state.activeSide) { showToast('Not your unit'); return; }
+  if (state.phase !== PHASE_COMBAT) { showToast('Can only fire during Combat phase'); return; }
+  if (unit.fired) { showToast('Unit already fired this turn'); return; }
+  if (unit.moved) { showToast('Unit already moved — cannot fire'); return; }
 
   const utype = UNIT_TYPES[unit.type];
-  if (utype.at === 0 && utype.ap === 0) return;
+  if (utype.at === 0 && utype.ap === 0) { showToast(`${utype.name} has no attack capability`); return; }
 
   state.fireMode = true;
   state.moveMode = false;
@@ -1771,10 +1954,11 @@ function executeMove(unit, destCol, destRow) {
   updateUI();
 }
 
-function executeFire(attacker, targetCol, targetRow) {
+// Calculate attack preview data without executing the attack
+function calcAttackPreview(attacker, targetCol, targetRow) {
   const atype = UNIT_TYPES[attacker.type];
   const defenders = getUnitsAt(targetCol, targetRow).filter(u => u.side !== attacker.side);
-  if (defenders.length === 0) return;
+  if (defenders.length === 0) return null;
 
   const defender = defenders.reduce((best, u) => {
     const df = UNIT_TYPES[u.type].df * (TERRAIN_INFO[state.map[u.col][u.row]].dfMod);
@@ -1784,10 +1968,7 @@ function executeFire(attacker, targetCol, targetRow) {
   const dtype = UNIT_TYPES[defender.type];
 
   let attackFactor = dtype.armored ? atype.at : atype.ap;
-  if (attackFactor <= 0) {
-    addLog(`${atype.name} has no effective attack against ${dtype.name}!`, 'log-combat');
-    return;
-  }
+  if (attackFactor <= 0) return null;
 
   const targetKey = hexKey(targetCol, targetRow);
   const targetData = state.targetableHexes ? state.targetableHexes.get(targetKey) : null;
@@ -1797,13 +1978,14 @@ function executeFire(attacker, targetCol, targetRow) {
   if (isIndirect) {
     if (!isObserved) {
       attackFactor = Math.max(1, Math.floor(attackFactor / 2));
-      observeLabel = ` [unobserved, halved to ${attackFactor}]`;
+      observeLabel = 'unobserved, halved';
     } else {
-      observeLabel = ' [observed]';
+      observeLabel = 'observed';
     }
   }
 
   const terrainMod = TERRAIN_INFO[state.map[defender.col][defender.row]].dfMod;
+  const terrainName = TERRAIN_INFO[state.map[defender.col][defender.row]].name;
   const defenseFactor = dtype.df * terrainMod;
   let ratio = attackFactor / defenseFactor;
 
@@ -1818,21 +2000,104 @@ function executeFire(attacker, targetCol, targetRow) {
   else if (ratio < 6.0) crtCol = '5:1';
   else crtCol = '6:1';
 
+  const outcomes = CRT[crtCol];
+
+  return {
+    attacker, defender, atype, dtype,
+    attackFactor, defenseFactor, terrainMod, terrainName,
+    crtCol, outcomes, observeLabel, isIndirect, targetCol, targetRow
+  };
+}
+
+function showAttackPreview(preview) {
+  if (!preview) {
+    hideAttackPreview();
+    return;
+  }
+  const el = document.getElementById('attack-preview');
+  const content = document.getElementById('attack-preview-content');
+
+  // Color the odds based on favorability
+  const colIdx = CRT_COLUMNS.indexOf(preview.crtCol);
+  const oddsClass = colIdx >= 5 ? 'odds-good' : colIdx >= 3 ? 'odds-even' : 'odds-bad';
+
+  // Count outcomes
+  const counts = {};
+  preview.outcomes.forEach(r => { counts[r] = (counts[r] || 0) + 1; });
+  let outcomesHtml = '';
+  for (const [result, count] of Object.entries(counts)) {
+    const cls = result === 'AE' ? 'outcome-ae' : result === 'AR' ? 'outcome-ar' : result === 'DR' ? 'outcome-dr' : result === 'DE' ? 'outcome-de' : 'outcome-ex';
+    const pct = Math.round(count / 6 * 100);
+    outcomesHtml += `<span class="outcome ${cls}">${result} ${pct}%</span>`;
+  }
+
+  let html = `<div class="preview-odds ${oddsClass}">${preview.crtCol} odds</div>`;
+  html += `<div class="preview-detail">${preview.atype.name} vs ${preview.dtype.name}</div>`;
+  html += `<div class="preview-detail">Attack: ${preview.attackFactor} ${preview.dtype.armored ? '(AT)' : '(AP)'}${preview.observeLabel ? ' [' + preview.observeLabel + ']' : ''}</div>`;
+  html += `<div class="preview-detail">Defense: ${preview.dtype.df} x${preview.terrainMod} (${preview.terrainName}) = ${preview.defenseFactor}</div>`;
+  html += `<div class="preview-outcomes">${outcomesHtml}</div>`;
+  const hintText = state.pendingFire ? 'Click again to confirm, Esc to cancel' : 'Click target to lock in, Esc to cancel';
+  html += `<div class="preview-hint">${hintText}</div>`;
+
+  content.innerHTML = html;
+  el.classList.add('visible');
+}
+
+function hideAttackPreview() {
+  document.getElementById('attack-preview').classList.remove('visible');
+}
+
+function executeFire(attacker, targetCol, targetRow) {
+  // First click on target: show preview and set pending
+  if (!state.pendingFire) {
+    const preview = calcAttackPreview(attacker, targetCol, targetRow);
+    if (!preview) {
+      if (preview === null) {
+        const atype = UNIT_TYPES[attacker.type];
+        const defenders = getUnitsAt(targetCol, targetRow).filter(u => u.side !== attacker.side);
+        if (defenders.length > 0) {
+          const dtype = UNIT_TYPES[defenders[0].type];
+          showToast(`${atype.name} has no effective attack against ${dtype.name}`);
+        }
+      }
+      return;
+    }
+    state.pendingFire = { attacker, targetCol, targetRow };
+    showAttackPreview(preview);
+    return;
+  }
+
+  // Second click: confirm if same target, otherwise switch target
+  if (state.pendingFire.targetCol !== targetCol || state.pendingFire.targetRow !== targetRow) {
+    // Clicked a different target - show new preview
+    const preview = calcAttackPreview(attacker, targetCol, targetRow);
+    if (!preview) return;
+    state.pendingFire = { attacker, targetCol, targetRow };
+    showAttackPreview(preview);
+    return;
+  }
+
+  // Confirmed! Execute the attack
+  const preview = calcAttackPreview(attacker, targetCol, targetRow);
+  if (!preview) return;
+
   const roll = Math.floor(Math.random() * 6);
-  const result = CRT[crtCol][roll];
+  const result = CRT[preview.crtCol][roll];
   const dieDisplay = roll + 1;
 
   attacker.fired = true;
   state.fireMode = false;
   state.targetableHexes = null;
+  state.pendingFire = null;
+  hideAttackPreview();
 
-  const terrainName = TERRAIN_INFO[state.map[defender.col][defender.row]].name;
+  const observeLog = preview.observeLabel ? ` [${preview.observeLabel}]` : '';
   addLog(
-    `${atype.name} fires at ${dtype.name}${observeLabel} — ${attackFactor} vs ${dtype.df}×${terrainMod}(${terrainName})=${defenseFactor} — ${crtCol} odds — die:${dieDisplay} → ${result}`,
+    `${preview.atype.name} fires at ${preview.dtype.name}${observeLog} — ${preview.attackFactor} vs ${preview.dtype.df}x${preview.terrainMod}(${preview.terrainName})=${preview.defenseFactor} — ${preview.crtCol} odds — die:${dieDisplay} → ${result}`,
     'log-combat'
   );
 
-  applyCombatResult(result, attacker, defender);
+  applyCombatResult(result, attacker, preview.defender);
   updateUI();
 }
 
@@ -2054,7 +2319,42 @@ function updateObjectivesPanel() {
   body.innerHTML = html;
 }
 
+function showConfirmModal(title, info, onConfirm) {
+  const modal = document.getElementById('confirm-modal');
+  document.getElementById('confirm-title').textContent = title;
+  document.getElementById('confirm-info').textContent = info;
+  modal.classList.add('visible');
+  const yesBtn = document.getElementById('btn-confirm-yes');
+  const noBtn = document.getElementById('btn-confirm-no');
+  function cleanup() {
+    modal.classList.remove('visible');
+    yesBtn.replaceWith(yesBtn.cloneNode(true));
+    noBtn.replaceWith(noBtn.cloneNode(true));
+  }
+  yesBtn.addEventListener('click', () => { cleanup(); onConfirm(); }, { once: true });
+  noBtn.addEventListener('click', () => { cleanup(); }, { once: true });
+}
+
 function advancePhase() {
+  const isPlacing = state.phase === PHASE_PLACEMENT || state.phase === PHASE_REINFORCEMENT;
+
+  // Check for unused units and confirm before advancing (combat/movement phases only)
+  if (!isPlacing) {
+    const available = state.units.filter(u => !u.destroyed && u.placed && u.side === state.activeSide && !u.fired && !u.moved);
+    if (available.length > 0) {
+      const phaseLabel = state.phase === PHASE_COMBAT ? 'Combat' : 'Movement';
+      showConfirmModal(
+        `End ${phaseLabel} Phase?`,
+        `${available.length} unit(s) have not acted this phase.`,
+        () => doAdvancePhase()
+      );
+      return;
+    }
+  }
+  doAdvancePhase();
+}
+
+function doAdvancePhase() {
   selectUnit(null);
   state.selectedRackIndex = -1;
   const isPlacing = state.phase === PHASE_PLACEMENT || state.phase === PHASE_REINFORCEMENT;
@@ -2204,6 +2504,7 @@ function importGameState(encoded) {
   state.fireMode = false;
   state.reachableHexes = null;
   state.targetableHexes = null;
+  state.pendingFire = null;
   state.rack = data.rack || [];
   state.selectedRackIndex = -1;
   state.hoverHex = null;
@@ -2344,6 +2645,7 @@ function handleHexClick(col, row) {
         return;
       }
     }
+    showToast('Out of range — move cancelled');
     state.moveMode = false;
     state.reachableHexes = null;
     updateUI();
@@ -2362,6 +2664,8 @@ function handleHexClick(col, row) {
     }
     state.fireMode = false;
     state.targetableHexes = null;
+    state.pendingFire = null;
+    hideAttackPreview();
     updateUI();
     return;
   }
@@ -2408,10 +2712,26 @@ canvas.addEventListener('mousemove', (e) => {
   }
   const w = screenToWorld(e.clientX, e.clientY);
   const hex = pixelToHex(w.x, w.y);
+  const prevHex = state.mouseHex;
   state.mouseHex = hex;
+
+  // Show attack preview on hover when in fire mode (before first click)
+  if (state.fireMode && !state.pendingFire && hex && state.targetableHexes) {
+    const key = hexKey(hex.col, hex.row);
+    if (state.targetableHexes.has(key)) {
+      const unit = getSelectedUnit();
+      if (unit) {
+        const preview = calcAttackPreview(unit, hex.col, hex.row);
+        showAttackPreview(preview);
+      }
+    } else if (!prevHex || !hex || prevHex.col !== hex.col || prevHex.row !== hex.row) {
+      hideAttackPreview();
+    }
+  }
 });
 canvas.addEventListener('mouseleave', () => {
   state.mouseHex = null;
+  if (state.fireMode && !state.pendingFire) hideAttackPreview();
 });
 
 canvas.addEventListener('drop', (e) => {
@@ -2500,6 +2820,12 @@ document.addEventListener('keydown', (e) => {
   } else if (e.key === '?') {
     toggleRulesPanel();
   } else if (e.key === 'Escape') {
+    // Dismiss modals first
+    const cm = document.getElementById('confirm-modal');
+    if (cm.classList.contains('visible')) {
+      cm.classList.remove('visible');
+      return;
+    }
     const vm = document.getElementById('victory-modal');
     if (vm.classList.contains('visible')) {
       vm.classList.remove('visible');
@@ -2508,6 +2834,17 @@ document.addEventListener('keydown', (e) => {
     const rp = document.getElementById('rules-panel');
     if (rp.classList.contains('visible')) {
       rp.classList.remove('visible');
+      return;
+    }
+    // Cancel fire/move mode but keep unit selected
+    if (state.fireMode || state.moveMode) {
+      state.fireMode = false;
+      state.moveMode = false;
+      state.reachableHexes = null;
+      state.targetableHexes = null;
+      state.pendingFire = null;
+      hideAttackPreview();
+      updateUI();
       return;
     }
     selectUnit(null);
@@ -2696,6 +3033,12 @@ function updateUI() {
     phaseText = sideLabel(state.activeSide) + ' ' +
       (state.phase === PHASE_COMBAT ? 'Combat' : 'Movement') + ' Phase';
   }
+  // Add units-remaining counter for combat/movement phases
+  if (!isPlacing) {
+    const total = state.units.filter(u => !u.destroyed && u.placed && u.side === state.activeSide).length;
+    const acted = state.units.filter(u => !u.destroyed && u.placed && u.side === state.activeSide && (u.fired || u.moved)).length;
+    phaseText += ` (${acted}/${total} acted)`;
+  }
   phaseEl.textContent = phaseText;
   phaseEl.className = 'phase ' + (state.activeSide === ALLIED ? 'allied-phase' : 'german-phase');
 
@@ -2758,6 +3101,24 @@ function updateUI() {
     btnNext.disabled = !hasAvailable;
     btnEnd.textContent = 'End Phase [Enter]';
 
+    // Dynamic tooltips for disabled buttons
+    if (!canFire) {
+      if (!sel) btnFire.title = 'Select a unit first';
+      else if (state.phase !== PHASE_COMBAT) btnFire.title = 'Only available during Combat phase';
+      else if (sel.fired) btnFire.title = 'Unit already fired this turn';
+      else if (sel.moved) btnFire.title = 'Unit already moved — cannot fire';
+      else if (sel.side !== state.activeSide) btnFire.title = 'Not your unit';
+      else btnFire.title = '';
+    } else { btnFire.title = 'Select a target to fire at'; }
+    if (!canMove) {
+      if (!sel) btnMove.title = 'Select a unit first';
+      else if (state.phase !== PHASE_MOVEMENT) btnMove.title = 'Only available during Movement phase';
+      else if (sel.moved) btnMove.title = 'Unit already moved this turn';
+      else if (sel.fired) btnMove.title = 'Unit already fired — cannot move';
+      else if (sel.side !== state.activeSide) btnMove.title = 'Not your unit';
+      else btnMove.title = '';
+    } else { btnMove.title = 'Enter movement mode to move unit'; }
+
     if (state.fireMode) btnFire.className = 'active';
     if (state.moveMode) btnMove.className = 'active';
   }
@@ -2784,6 +3145,15 @@ function addLog(text, className) {
   while (entries.children.length > 100) {
     entries.removeChild(entries.lastChild);
   }
+}
+
+let toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById('status-toast');
+  el.textContent = msg;
+  el.classList.add('visible');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('visible'), 2500);
 }
 
 // ═══════════════════════════════════════════
