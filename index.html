@@ -419,6 +419,73 @@ canvas { display: block; cursor: crosshair; flex: 1; }
   pointer-events: none;
 }
 #status-toast.visible { display: block; }
+
+/* Turn summary modal */
+#summary-modal {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.8);
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+}
+#summary-modal.visible { display: flex; }
+#summary-modal .modal-box {
+  background: #2a2a28;
+  border: 2px solid #6ea8d4;
+  padding: 24px 28px;
+  max-width: 440px;
+  width: 90%;
+}
+#summary-modal h2 {
+  font-size: 17px;
+  color: #6ea8d4;
+  margin-bottom: 14px;
+  text-align: center;
+}
+#summary-modal .summary-section {
+  margin-bottom: 10px;
+}
+#summary-modal .summary-label {
+  font-size: 11px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+}
+#summary-modal .summary-stat {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  padding: 2px 0;
+}
+#summary-modal .summary-stat .label { color: #bbb; }
+#summary-modal .summary-stat .value { color: #e0dcc8; font-weight: bold; }
+#summary-modal .summary-events {
+  font-size: 12px;
+  color: #ccc;
+  max-height: 150px;
+  overflow-y: auto;
+  padding: 6px;
+  background: #222;
+  border: 1px solid #444;
+  margin-top: 4px;
+}
+#summary-modal .summary-events div { padding: 2px 0; border-bottom: 1px solid #333; }
+#summary-modal button {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  margin-top: 14px;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid #6ea8d4;
+  background: #3a4a5a;
+  color: #e0dcc8;
+}
+#summary-modal button:hover { background: #4a5a6a; }
 </style>
 </head>
 <body>
@@ -638,6 +705,14 @@ canvas { display: block; cursor: crosshair; flex: 1; }
 
 <div id="status-toast"></div>
 
+<div id="summary-modal">
+  <div class="modal-box">
+    <h2 id="summary-title">Opponent's Turn Summary</h2>
+    <div id="summary-content"></div>
+    <button id="btn-summary-ok">Begin Your Turn</button>
+  </div>
+</div>
+
 <script>
 // ═══════════════════════════════════════════
 // SECTION 1: CONSTANTS & DATA
@@ -682,52 +757,114 @@ const RECON = 'recon';
 
 // Unit type definitions
 const UNIT_TYPES = {
-  // German units
-  'ge_pzivh':     { name: 'PzIV H',       class: ARM,  armored: true,  mp: 12, at: 12, ap: 6,  df: 4, range: 8,  symbol: 'X', side: GERMAN },
-  'ge_panther':   { name: 'Panther',       class: ARM,  armored: true,  mp: 12, at: 18, ap: 4,  df: 6, range: 10, symbol: 'X', side: GERMAN },
-  'ge_tiger':     { name: 'Tiger I',       class: ARM,  armored: true,  mp: 10, at: 20, ap: 6,  df: 8, range: 10, symbol: 'X', side: GERMAN },
-  'ge_stugiii':   { name: 'StuG III',      class: ARM,  armored: true,  mp: 12, at: 14, ap: 4,  df: 4, range: 8,  symbol: 'X', side: GERMAN },
-  'ge_inf':       { name: 'Infantry',      class: INF,  armored: false, mp: 4,  at: 2,  ap: 6,  df: 4, range: 1,  symbol: 'X', side: GERMAN },
-  'ge_mg':        { name: 'MG Sec.',       class: INF,  armored: false, mp: 4,  at: 0,  ap: 8,  df: 2, range: 4,  symbol: '.', side: GERMAN },
-  'ge_pak40':     { name: 'PaK 40',        class: AT_GUN, armored: false, mp: 2, at: 14, ap: 2, df: 2, range: 8,  symbol: '|', side: GERMAN },
-  'ge_grenadier': { name: 'Panzergren.',   class: MECH, armored: false, mp: 6,  at: 4,  ap: 6,  df: 4, range: 1,  symbol: 'X', side: GERMAN },
-  'ge_wespe':     { name: 'Wespe',         class: ART,  armored: true,  mp: 10, at: 2,  ap: 10, df: 2, range: 16, symbol: 'O', side: GERMAN, indirect: true },
-  'ge_sdkfz234':  { name: 'SdKfz 234',    class: RECON, armored: true, mp: 16, at: 6,  ap: 4,  df: 2, range: 6,  symbol: '/', side: GERMAN },
-  'ge_flak88':    { name: 'Flak 88',       class: AT_GUN, armored: false, mp: 0, at: 20, ap: 8, df: 2, range: 12, symbol: '*', side: GERMAN },
-  'ge_mortar':    { name: '81mm Mortar',   class: INF,  armored: false, mp: 4,  at: 0,  ap: 6,  df: 2, range: 6,  symbol: 'M', side: GERMAN, indirect: true },
-  // German Omaha units
-  'ge_mg42_bunker': { name: 'MG42 Bunker', class: INF,    armored: false, mp: 0,  at: 0,  ap: 10, df: 4, range: 6,  symbol: '.', side: GERMAN },
-  'ge_75mm_case':   { name: '75mm Csmt',   class: AT_GUN, armored: false, mp: 0,  at: 10, ap: 8,  df: 4, range: 8,  symbol: '|', side: GERMAN },
-  'ge_88mm_case':   { name: '88mm Csmt',   class: AT_GUN, armored: false, mp: 0,  at: 20, ap: 8,  df: 4, range: 10, symbol: '*', side: GERMAN },
-  'ge_50mm_at':     { name: '50mm AT',     class: AT_GUN, armored: false, mp: 0,  at: 8,  ap: 2,  df: 2, range: 6,  symbol: '|', side: GERMAN },
-  'ge_wn_garrison': { name: 'WN Garrison', class: INF,    armored: false, mp: 2,  at: 2,  ap: 6,  df: 4, range: 1,  symbol: 'X', side: GERMAN },
-  'ge_81mm_mortar': { name: '81mm Mortar', class: INF,    armored: false, mp: 0,  at: 0,  ap: 8,  df: 2, range: 8,  symbol: 'M', side: GERMAN, indirect: true },
-  'ge_352_reserve': { name: '352nd Res.',  class: INF,    armored: false, mp: 4,  at: 2,  ap: 6,  df: 4, range: 1,  symbol: 'X', side: GERMAN },
-  'ge_tobruk':      { name: 'Tobruk',      class: AT_GUN, armored: false, mp: 0,  at: 6,  ap: 4,  df: 4, range: 4,  symbol: '|', side: GERMAN },
-  // American units
-  'us_sherman':   { name: 'M4 Sherman',    class: ARM,  armored: true,  mp: 12, at: 10, ap: 6,  df: 4, range: 8,  symbol: 'X', side: ALLIED },
-  'us_76sherman': { name: 'M4A1(76)',      class: ARM,  armored: true,  mp: 12, at: 14, ap: 4,  df: 4, range: 10, symbol: 'X', side: ALLIED },
-  'us_stuart':    { name: 'M5 Stuart',     class: ARM,  armored: true,  mp: 16, at: 6,  ap: 4,  df: 2, range: 6,  symbol: 'X', side: ALLIED },
-  'us_inf':       { name: 'Infantry',      class: INF,  armored: false, mp: 4,  at: 2,  ap: 6,  df: 4, range: 1,  symbol: 'X', side: ALLIED },
-  'us_ranger':    { name: 'Rangers',       class: INF,  armored: false, mp: 6,  at: 4,  ap: 8,  df: 6, range: 1,  symbol: 'X', side: ALLIED },
-  'us_mg':        { name: '.30 Cal MG',    class: INF,  armored: false, mp: 4,  at: 0,  ap: 8,  df: 2, range: 4,  symbol: '.', side: ALLIED },
-  'us_57mm':      { name: '57mm AT Gun',   class: AT_GUN, armored: false, mp: 2, at: 10, ap: 2, df: 2, range: 8,  symbol: '|', side: ALLIED },
-  'us_airborne':  { name: 'Airborne',      class: INF,  armored: false, mp: 6,  at: 4,  ap: 8,  df: 6, range: 1,  symbol: 'X', side: ALLIED },
-  'us_priest':    { name: 'M7 Priest',     class: ART,  armored: true,  mp: 10, at: 2,  ap: 10, df: 2, range: 16, symbol: 'O', side: ALLIED, indirect: true },
-  'us_hellcat':   { name: 'M18 Hellcat',   class: ARM,  armored: true,  mp: 16, at: 16, ap: 4,  df: 2, range: 10, symbol: 'X', side: ALLIED },
-  'us_greyhound': { name: 'M8 Greyhound',  class: RECON, armored: true, mp: 16, at: 4,  ap: 4,  df: 2, range: 6,  symbol: '/', side: ALLIED },
-  'us_mortar':    { name: '81mm Mortar',   class: INF,  armored: false, mp: 4,  at: 0,  ap: 6,  df: 2, range: 6,  symbol: 'M', side: ALLIED, indirect: true },
-  // American Omaha units
-  'us_116_inf':    { name: '116th Inf',   class: INF,  armored: false, mp: 4,  at: 2,  ap: 6,  df: 4, range: 1,  symbol: 'X', side: ALLIED },
-  'us_16_inf':     { name: '16th Inf',    class: INF,  armored: false, mp: 4,  at: 2,  ap: 6,  df: 4, range: 1,  symbol: 'X', side: ALLIED },
-  'us_18_inf':     { name: '18th Inf',    class: INF,  armored: false, mp: 4,  at: 2,  ap: 6,  df: 4, range: 1,  symbol: 'X', side: ALLIED },
-  'us_2ranger':    { name: '2nd Rangers', class: INF,  armored: false, mp: 6,  at: 4,  ap: 8,  df: 6, range: 1,  symbol: 'X', side: ALLIED },
-  'us_5ranger':    { name: '5th Rangers', class: INF,  armored: false, mp: 6,  at: 4,  ap: 8,  df: 6, range: 1,  symbol: 'X', side: ALLIED },
-  'us_743_sherman': { name: '743rd Tank', class: ARM,  armored: true,  mp: 8,  at: 10, ap: 6,  df: 4, range: 8,  symbol: 'X', side: ALLIED },
-  'us_741_sherman': { name: '741st Tank', class: ARM,  armored: true,  mp: 8,  at: 10, ap: 6,  df: 2, range: 8,  symbol: 'X', side: ALLIED },
-  'us_engineer':   { name: 'Engineers',   class: INF,  armored: false, mp: 4,  at: 0,  ap: 4,  df: 2, range: 1,  symbol: 'X', side: ALLIED },
-  'us_105mm':      { name: '105mm How.',  class: ART,  armored: false, mp: 2,  at: 2,  ap: 10, df: 2, range: 12, symbol: 'O', side: ALLIED, indirect: true },
-  'us_dd_tank':    { name: 'DD Sherman',  class: ARM,  armored: true,  mp: 8,  at: 10, ap: 6,  df: 2, range: 8,  symbol: 'X', side: ALLIED },
+  // ── German Tanks ──
+  'ge_pzivh':       { name: 'PzKpfw IVH',    class: ARM,    armored: true,  mp: 10, at: 12, ap: 6,  df: 10, range: 8,  symbol: 'X', side: GERMAN },
+  'ge_panther':     { name: 'Panther',        class: ARM,    armored: true,  mp: 12, at: 18, ap: 6,  df: 16, range: 10, symbol: 'X', side: GERMAN },
+  'ge_tiger':       { name: 'Tiger I',        class: ARM,    armored: true,  mp: 8,  at: 18, ap: 8,  df: 18, range: 10, symbol: 'X', side: GERMAN },
+  'ge_tiger2':      { name: 'Tiger II',       class: ARM,    armored: true,  mp: 6,  at: 24, ap: 8,  df: 24, range: 12, symbol: 'X', side: GERMAN },
+  'ge_stugiii':     { name: 'StuG IIIG',      class: ARM,    armored: true,  mp: 10, at: 12, ap: 6,  df: 12, range: 8,  symbol: 'X', side: GERMAN },
+  'ge_jagdpziv':    { name: 'JgPz IV',        class: ARM,    armored: true,  mp: 10, at: 14, ap: 4,  df: 12, range: 8,  symbol: 'X', side: GERMAN },
+  'ge_jagdpanther': { name: 'Jagdpanther',    class: ARM,    armored: true,  mp: 12, at: 20, ap: 6,  df: 18, range: 10, symbol: 'X', side: GERMAN },
+  'ge_jagdtiger':   { name: 'Jagdtiger',      class: ARM,    armored: true,  mp: 6,  at: 24, ap: 8,  df: 24, range: 12, symbol: 'X', side: GERMAN },
+  'ge_hetzer':      { name: 'Hetzer',         class: ARM,    armored: true,  mp: 10, at: 10, ap: 4,  df: 10, range: 6,  symbol: 'X', side: GERMAN },
+  'ge_marder':      { name: 'Marder III',     class: ARM,    armored: true,  mp: 10, at: 12, ap: 2,  df: 4,  range: 8,  symbol: 'X', side: GERMAN },
+  'ge_nashorn':     { name: 'Nashorn',        class: ARM,    armored: true,  mp: 10, at: 16, ap: 4,  df: 4,  range: 12, symbol: 'X', side: GERMAN },
+  'ge_stuh42':      { name: 'StuH 42',        class: ARM,    armored: true,  mp: 10, at: 4,  ap: 12, df: 12, range: 6,  symbol: 'X', side: GERMAN },
+  // ── German SP Artillery ──
+  'ge_wespe':       { name: 'Wespe',          class: ART,    armored: true,  mp: 10, at: 2,  ap: 14, df: 4,  range: 20, symbol: 'O', side: GERMAN, indirect: true },
+  'ge_hummel':      { name: 'Hummel',         class: ART,    armored: true,  mp: 10, at: 2,  ap: 18, df: 4,  range: 24, symbol: 'O', side: GERMAN, indirect: true },
+  'ge_grille':      { name: 'Grille',         class: ART,    armored: true,  mp: 10, at: 2,  ap: 12, df: 4,  range: 16, symbol: 'O', side: GERMAN, indirect: true },
+  // ── German Halftracks ──
+  'ge_sdkfz251':    { name: 'SdKfz 251',      class: MECH,   armored: true,  mp: 12, at: 0,  ap: 2,  df: 2,  range: 2,  symbol: 'X', side: GERMAN },
+  'ge_sdkfz251_9':  { name: 'SdKfz 251/9',    class: MECH,   armored: true,  mp: 12, at: 6,  ap: 6,  df: 2,  range: 4,  symbol: 'X', side: GERMAN },
+  'ge_maultier':    { name: 'Maultier',       class: ART,    armored: true,  mp: 10, at: 2,  ap: 10, df: 2,  range: 16, symbol: 'O', side: GERMAN, indirect: true },
+  // ── German Armored Cars ──
+  'ge_sdkfz234':    { name: 'Puma',           class: RECON,  armored: true,  mp: 14, at: 8,  ap: 4,  df: 4,  range: 6,  symbol: '/', side: GERMAN },
+  'ge_sdkfz222':    { name: 'SdKfz 222',      class: RECON,  armored: true,  mp: 14, at: 0,  ap: 2,  df: 2,  range: 4,  symbol: '/', side: GERMAN },
+  // ── German Towed Artillery ──
+  'ge_leig18':      { name: '7.5cm leIG',     class: ART,    armored: false, mp: 2,  at: 2,  ap: 6,  df: 2,  range: 6,  symbol: 'O', side: GERMAN, indirect: true },
+  'ge_lefh18':      { name: '10.5cm leFH',    class: ART,    armored: false, mp: 2,  at: 2,  ap: 14, df: 2,  range: 20, symbol: 'O', side: GERMAN, indirect: true },
+  'ge_sfh18':       { name: '15cm sFH',       class: ART,    armored: false, mp: 2,  at: 2,  ap: 18, df: 2,  range: 24, symbol: 'O', side: GERMAN, indirect: true },
+  'ge_mortar':      { name: '8cm Mortar',     class: INF,    armored: false, mp: 2,  at: 0,  ap: 6,  df: 1,  range: 8,  symbol: 'M', side: GERMAN, indirect: true },
+  'ge_120mortar':   { name: '12cm Mortar',    class: INF,    armored: false, mp: 2,  at: 0,  ap: 10, df: 1,  range: 12, symbol: 'M', side: GERMAN, indirect: true },
+  'ge_nebelwerfer': { name: 'Nebelwerfer',    class: ART,    armored: false, mp: 2,  at: 0,  ap: 16, df: 1,  range: 14, symbol: 'O', side: GERMAN, indirect: true },
+  // ── German AT Guns ──
+  'ge_pak40':       { name: 'Pak 40',         class: AT_GUN, armored: false, mp: 2,  at: 14, ap: 4,  df: 2,  range: 8,  symbol: '|', side: GERMAN },
+  'ge_pak43':       { name: 'Pak 43',         class: AT_GUN, armored: false, mp: 0,  at: 20, ap: 6,  df: 2,  range: 12, symbol: '|', side: GERMAN },
+  'ge_flak88':      { name: 'Flak 88',        class: AT_GUN, armored: false, mp: 2,  at: 16, ap: 6,  df: 2,  range: 10, symbol: '*', side: GERMAN },
+  'ge_pak38':       { name: 'Pak 38',         class: AT_GUN, armored: false, mp: 2,  at: 8,  ap: 2,  df: 2,  range: 6,  symbol: '|', side: GERMAN },
+  // ── German AA ──
+  'ge_flak38':      { name: '2cm Flak 38',    class: INF,    armored: false, mp: 2,  at: 0,  ap: 4,  df: 1,  range: 4,  symbol: '*', side: GERMAN },
+  'ge_wirbelwind':  { name: 'Wirbelwind',     class: ARM,    armored: true,  mp: 10, at: 0,  ap: 8,  df: 4,  range: 4,  symbol: '*', side: GERMAN },
+  // ── German Infantry ──
+  'ge_inf':         { name: 'Rifle Plt',      class: INF,    armored: false, mp: 4,  at: 1,  ap: 4,  df: 4,  range: 1,  symbol: 'X', side: GERMAN },
+  'ge_grenadier':   { name: 'Grenadier',      class: INF,    armored: false, mp: 4,  at: 1,  ap: 5,  df: 5,  range: 1,  symbol: 'X', side: GERMAN },
+  'ge_volksgren':   { name: 'Volksgrenadier', class: INF,    armored: false, mp: 4,  at: 1,  ap: 3,  df: 3,  range: 1,  symbol: 'X', side: GERMAN },
+  'ge_pzgren':      { name: 'Panzergren.',    class: MECH,   armored: false, mp: 4,  at: 2,  ap: 5,  df: 5,  range: 1,  symbol: 'X', side: GERMAN },
+  'ge_ss_pzgren':   { name: 'SS Pzgren.',     class: MECH,   armored: false, mp: 4,  at: 2,  ap: 6,  df: 6,  range: 1,  symbol: 'X', side: GERMAN },
+  'ge_fallschirm':  { name: 'Fallschirmjgr',  class: INF,    armored: false, mp: 4,  at: 2,  ap: 6,  df: 6,  range: 1,  symbol: 'X', side: GERMAN },
+  'ge_pioneer':     { name: 'Pioneer',        class: INF,    armored: false, mp: 4,  at: 2,  ap: 5,  df: 4,  range: 1,  symbol: 'X', side: GERMAN },
+  'ge_mg':          { name: 'MG42 Team',      class: INF,    armored: false, mp: 2,  at: 0,  ap: 6,  df: 2,  range: 4,  symbol: '.', side: GERMAN },
+  'ge_pzschreck':   { name: 'Panzerschreck',  class: INF,    armored: false, mp: 4,  at: 6,  ap: 1,  df: 1,  range: 2,  symbol: '|', side: GERMAN },
+  // ── German Omaha-specific ──
+  'ge_mg42_bunker': { name: 'MG42 Bunker',    class: INF,    armored: false, mp: 0,  at: 0,  ap: 10, df: 4,  range: 6,  symbol: '.', side: GERMAN },
+  'ge_75mm_case':   { name: '75mm Csmt',      class: AT_GUN, armored: false, mp: 0,  at: 10, ap: 8,  df: 4,  range: 8,  symbol: '|', side: GERMAN },
+  'ge_88mm_case':   { name: '88mm Csmt',      class: AT_GUN, armored: false, mp: 0,  at: 20, ap: 8,  df: 4,  range: 10, symbol: '*', side: GERMAN },
+  'ge_50mm_at':     { name: '50mm AT',        class: AT_GUN, armored: false, mp: 0,  at: 8,  ap: 2,  df: 2,  range: 6,  symbol: '|', side: GERMAN },
+  'ge_wn_garrison': { name: 'WN Garrison',    class: INF,    armored: false, mp: 2,  at: 2,  ap: 6,  df: 4,  range: 1,  symbol: 'X', side: GERMAN },
+  'ge_81mm_mortar': { name: '81mm Mortar',    class: INF,    armored: false, mp: 0,  at: 0,  ap: 8,  df: 2,  range: 8,  symbol: 'M', side: GERMAN, indirect: true },
+  'ge_352_reserve': { name: '352nd Res.',     class: INF,    armored: false, mp: 4,  at: 2,  ap: 6,  df: 4,  range: 1,  symbol: 'X', side: GERMAN },
+  'ge_tobruk':      { name: 'Tobruk',         class: AT_GUN, armored: false, mp: 0,  at: 6,  ap: 4,  df: 4,  range: 4,  symbol: '|', side: GERMAN },
+
+  // ── American Tanks ──
+  'us_sherman':     { name: 'M4 Sherman',     class: ARM,    armored: true,  mp: 12, at: 8,  ap: 6,  df: 8,  range: 6,  symbol: 'X', side: ALLIED },
+  'us_76sherman':   { name: 'M4A1(76)',       class: ARM,    armored: true,  mp: 12, at: 12, ap: 4,  df: 8,  range: 8,  symbol: 'X', side: ALLIED },
+  'us_jumbo':       { name: 'M4A3E2 Jumbo',   class: ARM,    armored: true,  mp: 10, at: 8,  ap: 6,  df: 14, range: 6,  symbol: 'X', side: ALLIED },
+  'us_easy8':       { name: 'M4A3E8',         class: ARM,    armored: true,  mp: 12, at: 12, ap: 6,  df: 10, range: 8,  symbol: 'X', side: ALLIED },
+  'us_stuart':      { name: 'M5A1 Stuart',    class: ARM,    armored: true,  mp: 14, at: 6,  ap: 4,  df: 4,  range: 6,  symbol: 'X', side: ALLIED },
+  'us_chaffee':     { name: 'M24 Chaffee',    class: ARM,    armored: true,  mp: 14, at: 8,  ap: 4,  df: 4,  range: 8,  symbol: 'X', side: ALLIED },
+  'us_pershing':    { name: 'M26 Pershing',   class: ARM,    armored: true,  mp: 10, at: 18, ap: 6,  df: 16, range: 10, symbol: 'X', side: ALLIED },
+  'us_wolverine':   { name: 'M10 Wolverine',  class: ARM,    armored: true,  mp: 12, at: 14, ap: 4,  df: 6,  range: 8,  symbol: 'X', side: ALLIED },
+  'us_hellcat':     { name: 'M18 Hellcat',    class: ARM,    armored: true,  mp: 16, at: 14, ap: 4,  df: 2,  range: 8,  symbol: 'X', side: ALLIED },
+  'us_jackson':     { name: 'M36 Jackson',    class: ARM,    armored: true,  mp: 10, at: 18, ap: 6,  df: 6,  range: 10, symbol: 'X', side: ALLIED },
+  // ── American SP Artillery ──
+  'us_priest':      { name: 'M7 Priest',      class: ART,    armored: true,  mp: 10, at: 2,  ap: 14, df: 4,  range: 20, symbol: 'O', side: ALLIED, indirect: true },
+  'us_m12':         { name: 'M12 GMC',        class: ART,    armored: true,  mp: 8,  at: 2,  ap: 20, df: 2,  range: 28, symbol: 'O', side: ALLIED, indirect: true },
+  // ── American Halftracks ──
+  'us_m3_ht':       { name: 'M3 Halftrack',   class: MECH,   armored: true,  mp: 12, at: 0,  ap: 2,  df: 2,  range: 2,  symbol: 'X', side: ALLIED },
+  // ── American Armored Cars ──
+  'us_greyhound':   { name: 'M8 Greyhound',   class: RECON,  armored: true,  mp: 16, at: 4,  ap: 4,  df: 2,  range: 4,  symbol: '/', side: ALLIED },
+  // ── American Towed Artillery ──
+  'us_105mm':       { name: '105mm How.',     class: ART,    armored: false, mp: 2,  at: 2,  ap: 14, df: 2,  range: 20, symbol: 'O', side: ALLIED, indirect: true },
+  'us_155mm':       { name: '155mm Gun',      class: ART,    armored: false, mp: 2,  at: 2,  ap: 18, df: 2,  range: 28, symbol: 'O', side: ALLIED, indirect: true },
+  'us_75mm_pack':   { name: '75mm Pack',      class: ART,    armored: false, mp: 2,  at: 2,  ap: 8,  df: 2,  range: 12, symbol: 'O', side: ALLIED, indirect: true },
+  'us_mortar':      { name: '81mm Mortar',    class: INF,    armored: false, mp: 2,  at: 0,  ap: 6,  df: 1,  range: 8,  symbol: 'M', side: ALLIED, indirect: true },
+  'us_60mortar':    { name: '60mm Mortar',    class: INF,    armored: false, mp: 4,  at: 0,  ap: 4,  df: 1,  range: 6,  symbol: 'M', side: ALLIED, indirect: true },
+  'us_42mortar':    { name: '4.2" Mortar',    class: INF,    armored: false, mp: 2,  at: 0,  ap: 12, df: 1,  range: 12, symbol: 'M', side: ALLIED, indirect: true },
+  // ── American AT Guns ──
+  'us_57mm':        { name: '57mm AT Gun',    class: AT_GUN, armored: false, mp: 2,  at: 8,  ap: 2,  df: 2,  range: 6,  symbol: '|', side: ALLIED },
+  'us_3inch':       { name: '3-inch AT',      class: AT_GUN, armored: false, mp: 2,  at: 12, ap: 4,  df: 2,  range: 8,  symbol: '|', side: ALLIED },
+  'us_90mm':        { name: '90mm Gun',       class: AT_GUN, armored: false, mp: 0,  at: 16, ap: 6,  df: 2,  range: 10, symbol: '|', side: ALLIED },
+  // ── American AA ──
+  'us_bofors':      { name: '40mm Bofors',    class: INF,    armored: false, mp: 2,  at: 2,  ap: 6,  df: 1,  range: 6,  symbol: '*', side: ALLIED },
+  'us_quad50':      { name: 'Quad .50',       class: INF,    armored: false, mp: 2,  at: 0,  ap: 8,  df: 1,  range: 4,  symbol: '*', side: ALLIED },
+  // ── American Infantry ──
+  'us_inf':         { name: 'Rifle Plt',      class: INF,    armored: false, mp: 4,  at: 1,  ap: 4,  df: 4,  range: 1,  symbol: 'X', side: ALLIED },
+  'us_armored_inf': { name: 'Armored Inf',    class: INF,    armored: false, mp: 4,  at: 2,  ap: 5,  df: 5,  range: 1,  symbol: 'X', side: ALLIED },
+  'us_ranger':      { name: 'Rangers',        class: INF,    armored: false, mp: 4,  at: 2,  ap: 6,  df: 5,  range: 1,  symbol: 'X', side: ALLIED },
+  'us_airborne':    { name: 'Airborne',       class: INF,    armored: false, mp: 4,  at: 2,  ap: 6,  df: 5,  range: 1,  symbol: 'X', side: ALLIED },
+  'us_engineer':    { name: 'Engineers',      class: INF,    armored: false, mp: 4,  at: 2,  ap: 5,  df: 4,  range: 1,  symbol: 'X', side: ALLIED },
+  'us_mg':          { name: '.30 Cal MG',     class: INF,    armored: false, mp: 2,  at: 0,  ap: 6,  df: 2,  range: 4,  symbol: '.', side: ALLIED },
+  'us_bazooka':     { name: 'Bazooka Team',   class: INF,    armored: false, mp: 4,  at: 4,  ap: 1,  df: 1,  range: 2,  symbol: '|', side: ALLIED },
+  // ── American Omaha-specific ──
+  'us_116_inf':     { name: '116th Inf',      class: INF,    armored: false, mp: 4,  at: 1,  ap: 4,  df: 4,  range: 1,  symbol: 'X', side: ALLIED },
+  'us_16_inf':      { name: '16th Inf',       class: INF,    armored: false, mp: 4,  at: 1,  ap: 4,  df: 4,  range: 1,  symbol: 'X', side: ALLIED },
+  'us_18_inf':      { name: '18th Inf',       class: INF,    armored: false, mp: 4,  at: 1,  ap: 4,  df: 4,  range: 1,  symbol: 'X', side: ALLIED },
+  'us_2ranger':     { name: '2nd Rangers',    class: INF,    armored: false, mp: 4,  at: 2,  ap: 6,  df: 5,  range: 1,  symbol: 'X', side: ALLIED },
+  'us_5ranger':     { name: '5th Rangers',    class: INF,    armored: false, mp: 4,  at: 2,  ap: 6,  df: 5,  range: 1,  symbol: 'X', side: ALLIED },
+  'us_743_sherman': { name: '743rd Tank',     class: ARM,    armored: true,  mp: 8,  at: 8,  ap: 6,  df: 8,  range: 6,  symbol: 'X', side: ALLIED },
+  'us_741_sherman': { name: '741st Tank',     class: ARM,    armored: true,  mp: 8,  at: 8,  ap: 6,  df: 6,  range: 6,  symbol: 'X', side: ALLIED },
+  'us_dd_tank':     { name: 'DD Sherman',     class: ARM,    armored: true,  mp: 10, at: 8,  ap: 6,  df: 6,  range: 6,  symbol: 'X', side: ALLIED },
 };
 
 // Combat Results Table
@@ -899,18 +1036,21 @@ function loadTestScenario() {
     // Allied — reinforcements turn 3
     { type: 'us_hellcat',   side: ALLIED, availableTurn: 3 },
     { type: 'us_priest',    side: ALLIED, availableTurn: 3 },
+    { type: 'us_armored_inf', side: ALLIED, availableTurn: 3 },
     // German — initial
     { type: 'ge_panther',   side: GERMAN, availableTurn: 0 },
     { type: 'ge_pzivh',     side: GERMAN, availableTurn: 0 },
     { type: 'ge_stugiii',   side: GERMAN, availableTurn: 0 },
     { type: 'ge_inf',       side: GERMAN, availableTurn: 0 },
     { type: 'ge_inf',       side: GERMAN, availableTurn: 0 },
-    { type: 'ge_grenadier', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_pzgren',    side: GERMAN, availableTurn: 0 },
     { type: 'ge_pak40',     side: GERMAN, availableTurn: 0 },
     { type: 'ge_mg',        side: GERMAN, availableTurn: 0 },
+    { type: 'ge_pzschreck', side: GERMAN, availableTurn: 0 },
     // German — reinforcements turn 2
     { type: 'ge_tiger',     side: GERMAN, availableTurn: 2 },
     { type: 'ge_mortar',    side: GERMAN, availableTurn: 2 },
+    { type: 'ge_hetzer',    side: GERMAN, availableTurn: 2 },
   ];
 
   // Separate into initial placement rack and reinforcements
@@ -2438,7 +2578,86 @@ function doAdvancePhase() {
   }
 }
 
+function buildTurnSummary() {
+  // Extract recent events from battle log entries
+  const entries = document.getElementById('log-entries');
+  const events = [];
+  for (const el of entries.children) {
+    const text = el.textContent.trim();
+    if (!text) continue;
+    // Collect combat and movement events (stop at previous phase marker from prior turn)
+    if (text.startsWith('Game resumed') || text.startsWith('Game loaded')) break;
+    events.push(text);
+    if (events.length >= 30) break;
+  }
+
+  // Count destroyed units by side
+  const alliedDestroyed = state.units.filter(u => u.destroyed && u.side === ALLIED).length;
+  const germanDestroyed = state.units.filter(u => u.destroyed && u.side === GERMAN).length;
+
+  // Count objectives
+  let alliedObj = 0, germanObj = 0;
+  if (state.victoryConditions) {
+    for (const obj of state.victoryConditions.objectives) {
+      if (obj.holder === ALLIED) alliedObj++;
+      else if (obj.holder === GERMAN) germanObj++;
+    }
+  }
+
+  return {
+    turn: state.turn,
+    alliedLosses: state.alliedLosses,
+    germanLosses: state.germanLosses,
+    alliedDestroyed,
+    germanDestroyed,
+    alliedObjectives: alliedObj,
+    germanObjectives: germanObj,
+    events: events.reverse(),  // chronological order
+  };
+}
+
+function showTurnSummary(summary) {
+  const modal = document.getElementById('summary-modal');
+  const title = document.getElementById('summary-title');
+  const content = document.getElementById('summary-content');
+
+  title.textContent = `Turn ${summary.turn} Summary`;
+
+  let html = '';
+
+  // Casualties section
+  html += '<div class="summary-section">';
+  html += '<div class="summary-label">Casualties</div>';
+  html += `<div class="summary-stat"><span class="label">Allied losses:</span><span class="value">${summary.alliedLosses}</span></div>`;
+  html += `<div class="summary-stat"><span class="label">German losses:</span><span class="value">${summary.germanLosses}</span></div>`;
+  html += '</div>';
+
+  // Objectives section
+  if (summary.alliedObjectives > 0 || summary.germanObjectives > 0) {
+    html += '<div class="summary-section">';
+    html += '<div class="summary-label">Objectives Held</div>';
+    html += `<div class="summary-stat"><span class="label">Allied:</span><span class="value">${summary.alliedObjectives}</span></div>`;
+    html += `<div class="summary-stat"><span class="label">German:</span><span class="value">${summary.germanObjectives}</span></div>`;
+    html += '</div>';
+  }
+
+  // Recent events
+  if (summary.events && summary.events.length > 0) {
+    html += '<div class="summary-section">';
+    html += '<div class="summary-label">Recent Events</div>';
+    html += '<div class="summary-events">';
+    for (const evt of summary.events) {
+      html += `<div>${evt}</div>`;
+    }
+    html += '</div></div>';
+  }
+
+  content.innerHTML = html;
+  modal.classList.add('visible');
+}
+
 function exportGameState() {
+  const turnSummary = buildTurnSummary();
   const data = {
     version: 1,
     scenarioName: state.scenarioName,
@@ -2461,6 +2680,7 @@ function exportGameState() {
     victoryConditions: state.victoryConditions,
     alliedLosses: state.alliedLosses,
     germanLosses: state.germanLosses,
+    turnSummary: turnSummary,
   };
   const json = JSON.stringify(data);
   const encoded = btoa(unescape(encodeURIComponent(json)));
@@ -2565,6 +2785,11 @@ function importGameState(encoded) {
   renderRack();
   resizeCanvas();
   updateUI();
+
+  // Show turn summary if available
+  if (data.turnSummary) {
+    showTurnSummary(data.turnSummary);
+  }
 }
 
 function finishPhaseAdvance() {
@@ -2863,6 +3088,11 @@ document.addEventListener('keydown', (e) => {
     toggleRulesPanel();
   } else if (e.key === 'Escape') {
     // Dismiss modals first
+    const sm = document.getElementById('summary-modal');
+    if (sm.classList.contains('visible')) {
+      sm.classList.remove('visible');
+      return;
+    }
     const cm = document.getElementById('confirm-modal');
     if (cm.classList.contains('visible')) {
       cm.classList.remove('visible');
@@ -3294,6 +3524,11 @@ function init() {
   // Victory modal button
   document.getElementById('btn-victory-ok').addEventListener('click', () => {
     document.getElementById('victory-modal').classList.remove('visible');
+  });
+
+  // Summary modal button
+  document.getElementById('btn-summary-ok').addEventListener('click', () => {
+    document.getElementById('summary-modal').classList.remove('visible');
   });
 
   // Export modal buttons
