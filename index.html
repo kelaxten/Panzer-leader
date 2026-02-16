@@ -540,6 +540,8 @@ canvas { display: block; cursor: crosshair; flex: 1; }
   <div id="actions">
     <button id="btn-fire" disabled>Fire at Target [F]</button>
     <button id="btn-move" disabled>Enter Move Mode [M]</button>
+    <button id="btn-load" class="hidden" disabled>Load onto Transport [L]</button>
+    <button id="btn-unload" class="hidden" disabled>Unload Passenger [U]</button>
     <button id="btn-return" disabled>Return to Rack [R]</button>
     <button id="btn-next-unit" disabled>Next Unit [N]</button>
     <button id="btn-end-phase">Done Placing [Enter]</button>
@@ -775,8 +777,8 @@ const UNIT_TYPES = {
   'ge_hummel':      { name: 'Hummel',         class: ART,    armored: true,  mp: 10, at: 2,  ap: 18, df: 4,  range: 24, symbol: 'O', side: GERMAN, indirect: true },
   'ge_grille':      { name: 'Grille',         class: ART,    armored: true,  mp: 10, at: 2,  ap: 12, df: 4,  range: 16, symbol: 'O', side: GERMAN, indirect: true },
   // ── German Halftracks ──
-  'ge_sdkfz251':    { name: 'SdKfz 251',      class: MECH,   armored: true,  mp: 12, at: 0,  ap: 2,  df: 2,  range: 2,  symbol: 'X', side: GERMAN },
-  'ge_sdkfz251_9':  { name: 'SdKfz 251/9',    class: MECH,   armored: true,  mp: 12, at: 6,  ap: 6,  df: 2,  range: 4,  symbol: 'X', side: GERMAN },
+  'ge_sdkfz251':    { name: 'SdKfz 251',      class: MECH,   armored: true,  mp: 12, at: 0,  ap: 2,  df: 2,  range: 2,  symbol: 'X', side: GERMAN, transport: true },
+  'ge_sdkfz251_9':  { name: 'SdKfz 251/9',    class: MECH,   armored: true,  mp: 12, at: 6,  ap: 6,  df: 2,  range: 4,  symbol: 'X', side: GERMAN, transport: true },
   'ge_maultier':    { name: 'Maultier',       class: ART,    armored: true,  mp: 10, at: 2,  ap: 10, df: 2,  range: 16, symbol: 'O', side: GERMAN, indirect: true },
   // ── German Armored Cars ──
   'ge_sdkfz234':    { name: 'Puma',           class: RECON,  armored: true,  mp: 14, at: 8,  ap: 4,  df: 4,  range: 6,  symbol: '/', side: GERMAN },
@@ -831,7 +833,7 @@ const UNIT_TYPES = {
   'us_priest':      { name: 'M7 Priest',      class: ART,    armored: true,  mp: 10, at: 2,  ap: 14, df: 4,  range: 20, symbol: 'O', side: ALLIED, indirect: true },
   'us_m12':         { name: 'M12 GMC',        class: ART,    armored: true,  mp: 8,  at: 2,  ap: 20, df: 2,  range: 28, symbol: 'O', side: ALLIED, indirect: true },
   // ── American Halftracks ──
-  'us_m3_ht':       { name: 'M3 Halftrack',   class: MECH,   armored: true,  mp: 12, at: 0,  ap: 2,  df: 2,  range: 2,  symbol: 'X', side: ALLIED },
+  'us_m3_ht':       { name: 'M3 Halftrack',   class: MECH,   armored: true,  mp: 12, at: 0,  ap: 2,  df: 2,  range: 2,  symbol: 'X', side: ALLIED, transport: true },
   // ── American Armored Cars ──
   'us_greyhound':   { name: 'M8 Greyhound',   class: RECON,  armored: true,  mp: 16, at: 4,  ap: 4,  df: 2,  range: 4,  symbol: '/', side: ALLIED },
   // ── American Towed Artillery ──
@@ -935,6 +937,9 @@ function createUnit(typeId, col, row) {
     dispersed: false,
     destroyed: false,
     placed: true,
+    hidden: false,
+    loadedOnto: null,   // id of carrier unit if loaded as passenger
+    passengers: [],     // array of unit ids loaded onto this transport
   };
 }
 
@@ -1470,7 +1475,11 @@ function findReachable(unit) {
     const neighbors = hexNeighbors(cur.col, cur.row);
     for (const n of neighbors) {
       const terrain = state.map[n.col][n.row];
-      const cost = isVehicle ? TERRAIN_INFO[terrain].moveCostVeh : TERRAIN_INFO[terrain].moveCostInf;
+      let cost = isVehicle ? TERRAIN_INFO[terrain].moveCostVeh : TERRAIN_INFO[terrain].moveCostInf;
+      // Wrecks add +1 MP cost for vehicles
+      if (isVehicle && state.wrecks.some(w => w.col === n.col && w.row === n.row)) {
+        cost += 1;
+      }
       const remaining = cur.mp - cost;
       if (remaining < 0) continue;
       const nk = hexKey(n.col, n.row);
@@ -1958,10 +1967,36 @@ function drawWrecks() {
   }
 }
 
+function isUnitSpotted(unit) {
+  // Own units are always visible
+  if (unit.side === state.activeSide) return true;
+  if (!unit.hidden) return true;
+  // Check if any friendly (active side) unit is adjacent
+  for (const u of state.units) {
+    if (u.destroyed || !u.placed || u.side !== state.activeSide) continue;
+    if (hexDistance(u.col, u.row, unit.col, unit.row) <= 1) return true;
+  }
+  return false;
+}
+
+function updateSpotting() {
+  for (const u of state.units) {
+    if (!u.hidden || u.destroyed || !u.placed) continue;
+    if (isUnitSpotted(u)) {
+      u.hidden = false;
+      addLog(`  ${UNIT_TYPES[u.type].name} spotted at (${u.col},${u.row})!`, 'log-result');
+    }
+  }
+}
+
 function drawUnits() {
   const hexGroups = new Map();
   for (const u of state.units) {
     if (u.destroyed || !u.placed) continue;
+    // Skip loaded passengers (they're inside a carrier)
+    if (u.loadedOnto) continue;
+    // Skip hidden enemy units
+    if (u.hidden && u.side !== state.activeSide && !isUnitSpotted(u)) continue;
     const k = hexKey(u.col, u.row);
     if (!hexGroups.has(k)) hexGroups.set(k, []);
     hexGroups.get(k).push(u);
@@ -2008,7 +2043,7 @@ function render() {
 // ═══════════════════════════════════════════
 
 function getUnitsAt(col, row) {
-  return state.units.filter(u => u.col === col && u.row === row && !u.destroyed && u.placed);
+  return state.units.filter(u => u.col === col && u.row === row && !u.destroyed && u.placed && !u.loadedOnto);
 }
 
 function getSelectedUnit() {
@@ -2140,7 +2175,7 @@ function enterFireMode() {
     }
   } else {
     for (const enemy of state.units) {
-      if (enemy.destroyed || !enemy.placed || enemy.side === unit.side) continue;
+      if (enemy.destroyed || !enemy.placed || enemy.side === unit.side || enemy.hidden) continue;
       const dist = hexDistance(unit.col, unit.row, enemy.col, enemy.row);
       if (dist <= 0 || dist > utype.range) continue;
       const key = hexKey(enemy.col, enemy.row);
@@ -2166,6 +2201,76 @@ function executeMove(unit, destCol, destRow) {
   state.moveMode = false;
   state.reachableHexes = null;
   addLog(`${UNIT_TYPES[unit.type].name} moves from ${from} to (${destCol},${destRow})`, 'log-move');
+  // Move passengers with carrier
+  if (unit.passengers && unit.passengers.length > 0) {
+    for (const pid of unit.passengers) {
+      const p = state.units.find(u => u.id === pid);
+      if (p && !p.destroyed) {
+        p.col = destCol;
+        p.row = destRow;
+        p.moved = true;
+      }
+    }
+  }
+  updateSpotting();
+  updateUI();
+}
+
+function loadUnit() {
+  const unit = getSelectedUnit();
+  if (!unit) { showToast('Select an infantry unit first'); return; }
+  if (unit.side !== state.activeSide) { showToast('Not your unit'); return; }
+  if (state.phase !== PHASE_MOVEMENT) { showToast('Can only load during Movement phase'); return; }
+  if (unit.moved || unit.fired) { showToast('Unit already acted this turn'); return; }
+  const utype = UNIT_TYPES[unit.type];
+  if (utype.class !== INF) { showToast('Only infantry can be loaded onto transports'); return; }
+  if (unit.loadedOnto) { showToast('Unit is already loaded'); return; }
+
+  // Find adjacent transport in same hex
+  const transports = getUnitsAt(unit.col, unit.row).filter(u =>
+    u.id !== unit.id && u.side === unit.side && !u.destroyed &&
+    UNIT_TYPES[u.type].transport && u.passengers.length === 0
+  );
+  if (transports.length === 0) {
+    showToast('No available transport in this hex');
+    return;
+  }
+  const carrier = transports[0];
+  carrier.passengers.push(unit.id);
+  unit.loadedOnto = carrier.id;
+  unit.moved = true; // loading uses the unit's action
+  addLog(`${utype.name} loads onto ${UNIT_TYPES[carrier.type].name}`, 'log-move');
+  updateUI();
+}
+
+function unloadUnit() {
+  const unit = getSelectedUnit();
+  if (!unit) { showToast('Select a loaded unit or transport first'); return; }
+  if (unit.side !== state.activeSide) { showToast('Not your unit'); return; }
+  if (state.phase !== PHASE_MOVEMENT) { showToast('Can only unload during Movement phase'); return; }
+
+  // If a transport is selected, unload its passenger
+  let passenger, carrier;
+  const utype = UNIT_TYPES[unit.type];
+  if (utype.transport && unit.passengers.length > 0) {
+    carrier = unit;
+    passenger = state.units.find(u => u.id === unit.passengers[0]);
+  } else if (unit.loadedOnto) {
+    passenger = unit;
+    carrier = state.units.find(u => u.id === unit.loadedOnto);
+  } else {
+    showToast('No passengers to unload');
+    return;
+  }
+
+  if (!passenger || !carrier) { showToast('Error: passenger or carrier not found'); return; }
+
+  carrier.passengers = carrier.passengers.filter(id => id !== passenger.id);
+  passenger.loadedOnto = null;
+  passenger.col = carrier.col;
+  passenger.row = carrier.row;
+  passenger.moved = true; // unloading uses the passenger's action
+  addLog(`${UNIT_TYPES[passenger.type].name} unloads from ${UNIT_TYPES[carrier.type].name}`, 'log-move');
   updateUI();
 }
 
@@ -2395,6 +2500,7 @@ function executeFire(attacker, targetCol, targetRow) {
   // Indirect fire: queue order for next turn instead of resolving now
   if (atype.indirect) {
     attacker.fired = true;
+    attacker.hidden = false;
     state.fireMode = false;
     state.targetableHexes = null;
     state.pendingFire = null;
@@ -2418,6 +2524,7 @@ function executeFire(attacker, targetCol, targetRow) {
   const dieDisplay = roll + 1;
 
   attacker.fired = true;
+  attacker.hidden = false;
   state.fireMode = false;
   state.targetableHexes = null;
   state.pendingFire = null;
@@ -2472,21 +2579,30 @@ function applyCombatResult(result, attacker, defender) {
       break;
   }
 
-  // Track losses and place wrecks
-  if (attacker.destroyed) {
-    if (attacker.side === ALLIED) state.alliedLosses++;
+  // Track losses, place wrecks, destroy passengers
+  function handleDestroyed(unit) {
+    if (unit.side === ALLIED) state.alliedLosses++;
     else state.germanLosses++;
-    if (UNIT_TYPES[attacker.type].armored) {
-      state.wrecks.push({ col: attacker.col, row: attacker.row, name: UNIT_TYPES[attacker.type].name });
+    if (UNIT_TYPES[unit.type].armored) {
+      state.wrecks.push({ col: unit.col, row: unit.row, name: UNIT_TYPES[unit.type].name });
+    }
+    // Destroy passengers if carrier is eliminated
+    if (unit.passengers && unit.passengers.length > 0) {
+      for (const pid of unit.passengers) {
+        const p = state.units.find(u => u.id === pid);
+        if (p && !p.destroyed) {
+          p.destroyed = true;
+          p.loadedOnto = null;
+          addLog(`  ${UNIT_TYPES[p.type].name} (passenger) destroyed with carrier!`, 'log-result');
+          if (p.side === ALLIED) state.alliedLosses++;
+          else state.germanLosses++;
+        }
+      }
+      unit.passengers = [];
     }
   }
-  if (defender.destroyed) {
-    if (defender.side === ALLIED) state.alliedLosses++;
-    else state.germanLosses++;
-    if (UNIT_TYPES[defender.type].armored) {
-      state.wrecks.push({ col: defender.col, row: defender.row, name: UNIT_TYPES[defender.type].name });
-    }
-  }
+  if (attacker.destroyed) handleDestroyed(attacker);
+  if (defender.destroyed) handleDestroyed(defender);
 
   if (attacker.destroyed && attacker.id === state.selectedUnitId) {
     selectUnit(null);
@@ -3006,6 +3122,7 @@ function exportGameState() {
     alliedLosses: state.alliedLosses,
     germanLosses: state.germanLosses,
     ifOrders: state.ifOrders,
+    wrecks: state.wrecks,
     turnSummary: turnSummary,
   };
   const json = JSON.stringify(data);
@@ -3063,6 +3180,7 @@ function buildSharePayload() {
     alliedLosses: state.alliedLosses,
     germanLosses: state.germanLosses,
     ifOrders: state.ifOrders,
+    wrecks: state.wrecks,
   };
 }
 
@@ -3095,6 +3213,7 @@ function importGameState(encoded) {
   state.targetableHexes = null;
   state.pendingFire = null;
   state.ifOrders = data.ifOrders || [];
+  state.wrecks = data.wrecks || [];
   state.rack = data.rack || [];
   state.selectedRackIndex = -1;
   state.hoverHex = null;
@@ -3413,6 +3532,10 @@ document.addEventListener('keydown', (e) => {
     if (!isPlacing) enterFireMode();
   } else if (e.key === 'm' || e.key === 'M') {
     if (!isPlacing) enterMoveMode();
+  } else if (e.key === 'l' || e.key === 'L') {
+    if (!isPlacing) loadUnit();
+  } else if (e.key === 'u' || e.key === 'U') {
+    if (!isPlacing) unloadUnit();
   } else if (e.key === 'r' || e.key === 'R') {
     if (isPlacing) {
       const sel = getSelectedUnit();
@@ -3523,6 +3646,8 @@ function selectNextUnit() {
 // Button bindings
 document.getElementById('btn-fire').addEventListener('click', enterFireMode);
 document.getElementById('btn-move').addEventListener('click', enterMoveMode);
+document.getElementById('btn-load').addEventListener('click', loadUnit);
+document.getElementById('btn-unload').addEventListener('click', unloadUnit);
 document.getElementById('btn-end-phase').addEventListener('click', advancePhase);
 document.getElementById('btn-next-unit').addEventListener('click', () => {
   const isPlacing = state.phase === PHASE_PLACEMENT || state.phase === PHASE_REINFORCEMENT;
@@ -3688,7 +3813,8 @@ function updateUI() {
         <span class="stat-label">Range:</span><span class="stat-value">${utype.range}</span>
         <span class="stat-label">MP:</span><span class="stat-value">${utype.mp}</span>
         <span class="stat-label">Position:</span><span class="stat-value">(${sel.col},${sel.row})</span>
-        <span class="stat-label">Status:</span><span class="stat-value">${sel.dispersed ? 'DISPERSED' : ''}${sel.fired ? ' FIRED' : sel.moved ? ' MOVED' : sel.dispersed ? '' : 'Ready'}</span>
+        <span class="stat-label">Status:</span><span class="stat-value">${sel.dispersed ? 'DISPERSED' : ''}${sel.fired ? ' FIRED' : sel.moved ? ' MOVED' : sel.dispersed ? '' : 'Ready'}${sel.loadedOnto ? ' [LOADED]' : ''}</span>
+        ${utype.transport ? `<span class="stat-label">Cargo:</span><span class="stat-value">${sel.passengers.length > 0 ? sel.passengers.map(pid => { const p = state.units.find(u => u.id === pid); return p ? UNIT_TYPES[p.type].name : '?'; }).join(', ') : 'Empty'}</span>` : ''}
       </div>
     `;
   } else {
@@ -3702,9 +3828,14 @@ function updateUI() {
   const btnNext = document.getElementById('btn-next-unit');
   const btnEnd = document.getElementById('btn-end-phase');
 
+  const btnLoad = document.getElementById('btn-load');
+  const btnUnload = document.getElementById('btn-unload');
+
   if (isPlacing) {
     btnFire.className = 'hidden';
     btnMove.className = 'hidden';
+    btnLoad.className = 'hidden';
+    btnUnload.className = 'hidden';
     btnReturn.className = '';
     btnReturn.disabled = !sel || sel.side !== state.activeSide;
     btnNext.disabled = state.rack.length === 0;
@@ -3713,6 +3844,25 @@ function updateUI() {
     btnFire.className = '';
     btnMove.className = '';
     btnReturn.className = 'hidden';
+
+    // Show Load/Unload buttons during movement phase
+    const isMovement = state.phase === PHASE_MOVEMENT;
+    if (isMovement && sel && sel.side === state.activeSide) {
+      const selType = UNIT_TYPES[sel.type];
+      // Show Load: infantry in same hex as empty transport
+      const canLoad = selType.class === INF && !sel.loadedOnto && !sel.moved && !sel.fired &&
+        state.units.some(u => u.col === sel.col && u.row === sel.row && u.side === sel.side &&
+          !u.destroyed && u.placed && UNIT_TYPES[u.type].transport && u.passengers.length === 0 && u.id !== sel.id);
+      // Show Unload: transport with passengers, or loaded unit
+      const canUnload = (selType.transport && sel.passengers.length > 0) || !!sel.loadedOnto;
+      btnLoad.className = canLoad ? '' : 'hidden';
+      btnLoad.disabled = !canLoad;
+      btnUnload.className = canUnload ? '' : 'hidden';
+      btnUnload.disabled = !canUnload;
+    } else {
+      btnLoad.className = 'hidden';
+      btnUnload.className = 'hidden';
+    }
 
     const canFireNormal = sel && sel.side === state.activeSide && state.phase === PHASE_COMBAT && !sel.fired && !sel.moved;
     const canFireCAT = sel && sel.side === state.activeSide && state.phase === PHASE_CLOSE_ASSAULT && !sel.fired && UNIT_TYPES[sel.type].class === INF;
