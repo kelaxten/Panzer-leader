@@ -868,7 +868,7 @@ const UNIT_TYPES = {
 };
 
 // Combat Results Table
-const CRT_COLUMNS = ['1:4','1:3','1:2','1:1','2:1','3:1','4:1','5:1','6:1'];
+const CRT_COLUMNS = ['1:4','1:3','1:2','1:1','2:1','3:1','4:1','5:1','6:1','CAT'];
 const CRT = {
   '1:4': ['AE','AE','AE','AE','AR','DR'],
   '1:3': ['AE','AE','AE','AR','DR','DR'],
@@ -879,6 +879,7 @@ const CRT = {
   '4:1': ['AR','DR','DE','DE','DE','DE'],
   '5:1': ['DR','DR','DE','DE','DE','DE'],
   '6:1': ['DR','DE','DE','DE','DE','DE'],
+  'CAT': ['AE','AR','AR','EX','DR','DE'],
 };
 
 // ═══════════════════════════════════════════
@@ -890,6 +891,7 @@ const PHASE_PLACEMENT = 'placement';
 const PHASE_REINFORCEMENT = 'reinforcement';
 const PHASE_COMBAT = 'combat';
 const PHASE_MOVEMENT = 'movement';
+const PHASE_CLOSE_ASSAULT = 'close_assault';
 
 let state = {
   map: [],
@@ -916,6 +918,8 @@ let state = {
   germanLosses: 0,
   objectivesPanelOpen: true,
   pendingFire: null,        // { attacker, targetCol, targetRow } awaiting confirmation
+  ifOrders: [],             // queued indirect fire orders: { attackerId, targetCol, targetRow, side, turnOrdered }
+  wrecks: [],               // wreck markers: { col, row, name }
 };
 
 let nextUnitId = 1;
@@ -1454,10 +1458,11 @@ function hexKey(col, row) { return col + ',' + row; }
 function findReachable(unit) {
   const utype = UNIT_TYPES[unit.type];
   const isVehicle = utype.class === ARM || utype.class === MECH || utype.class === RECON || utype.class === ART;
+  const canOverrun = utype.armored && (utype.class === ARM || utype.class === MECH || utype.class === RECON);
   const maxMP = utype.mp;
-  const reachable = new Map();
+  const reachable = new Map(); // key → { mp, overrun }
   const startKey = hexKey(unit.col, unit.row);
-  reachable.set(startKey, maxMP);
+  reachable.set(startKey, { mp: maxMP, overrun: false });
 
   const queue = [{ col: unit.col, row: unit.row, mp: maxMP }];
   while (queue.length > 0) {
@@ -1469,13 +1474,24 @@ function findReachable(unit) {
       const remaining = cur.mp - cost;
       if (remaining < 0) continue;
       const nk = hexKey(n.col, n.row);
-      if (reachable.has(nk) && reachable.get(nk) >= remaining) continue;
       const unitsInHex = getUnitsAt(n.col, n.row);
       const friendlyCount = unitsInHex.filter(u => u.side === unit.side).length;
       const enemyPresent = unitsInHex.some(u => u.side !== unit.side);
-      if (enemyPresent) continue;
+
+      if (enemyPresent) {
+        // Overrun: armored units can enter enemy-occupied clear/road hexes
+        if (canOverrun && (terrain === T.CLEAR || terrain === T.ROAD)) {
+          const existing = reachable.get(nk);
+          if (!existing || existing.mp < remaining) {
+            reachable.set(nk, { mp: remaining, overrun: true });
+          }
+        }
+        continue; // Cannot pass through enemy hexes
+      }
       if (friendlyCount >= STACK_LIMIT) continue;
-      reachable.set(nk, remaining);
+      const existing = reachable.get(nk);
+      if (existing && existing.mp >= remaining) continue;
+      reachable.set(nk, { mp: remaining, overrun: false });
       queue.push({ col: n.col, row: n.row, mp: remaining });
     }
   }
@@ -1719,17 +1735,27 @@ function drawOverlays() {
 
   // Movement range overlay with remaining MP
   if (state.moveMode && state.reachableHexes) {
-    state.reachableHexes.forEach((mp, key) => {
+    state.reachableHexes.forEach((data, key) => {
       const [c, r] = key.split(',').map(Number);
       const { x, y } = hexToPixel(c, r);
-      drawHex(x, y, HEX_SIZE - 2, 'rgba(100,200,100,0.3)', 'rgba(100,200,100,0.7)');
-      // Show remaining MP on hex
-      if (viewZoom >= 0.5) {
-        ctx.font = 'bold 8px Courier New';
-        ctx.fillStyle = 'rgba(200,255,200,0.9)';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'bottom';
-        ctx.fillText(mp + ' MP', x, y + HEX_SIZE - 4);
+      if (data.overrun) {
+        drawHex(x, y, HEX_SIZE - 2, 'rgba(200,100,50,0.35)', 'rgba(255,120,50,0.8)');
+        if (viewZoom >= 0.5) {
+          ctx.font = 'bold 8px Courier New';
+          ctx.fillStyle = 'rgba(255,200,150,0.9)';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'bottom';
+          ctx.fillText('OVERRUN', x, y + HEX_SIZE - 4);
+        }
+      } else {
+        drawHex(x, y, HEX_SIZE - 2, 'rgba(100,200,100,0.3)', 'rgba(100,200,100,0.7)');
+        if (viewZoom >= 0.5) {
+          ctx.font = 'bold 8px Courier New';
+          ctx.fillStyle = 'rgba(200,255,200,0.9)';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'bottom';
+          ctx.fillText(data.mp + ' MP', x, y + HEX_SIZE - 4);
+        }
       }
     });
   }
@@ -1838,16 +1864,20 @@ function drawUnitSymbol(cx, cy, w, h, unitClass) {
 }
 
 function drawUnitCounter(ux, uy, u, utype) {
-  const w = 36, h = 26;
+  const w = 42, h = 30;
   const isGerman = u.side === GERMAN;
   let bgColor = isGerman ? '#5a5a5a' : '#4a6a3a';
   let textColor = isGerman ? '#ddd' : '#dfd';
   let borderColor = isGerman ? '#888' : '#6a8a5a';
 
   const isActive = u.side === state.activeSide;
-  const isCombatOrMove = state.phase === PHASE_COMBAT || state.phase === PHASE_MOVEMENT;
-  const canAct = isActive && isCombatOrMove && !u.fired && !u.moved;
+  const isActionPhase = state.phase === PHASE_COMBAT || state.phase === PHASE_MOVEMENT || state.phase === PHASE_CLOSE_ASSAULT;
+  const canAct = isActive && isActionPhase && !u.fired && !u.moved;
 
+  if (u.dispersed) {
+    bgColor = isGerman ? '#4a4040' : '#3a5030';
+    textColor = isGerman ? '#b99' : '#9b9';
+  }
   if (u.fired) {
     bgColor = isGerman ? '#3a3a3a' : '#2a4a2a';
     borderColor = '#d44';
@@ -1876,14 +1906,19 @@ function drawUnitCounter(ux, uy, u, utype) {
   // Draw NATO symbol in background between name and stats
   drawUnitSymbol(ux, uy, w, h, utype.class);
 
-  ctx.font = 'bold 9px Courier New';
+  // Line 1: Unit name (top)
+  ctx.font = 'bold 8px Courier New';
   ctx.fillStyle = textColor;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  ctx.fillText(utype.name.substring(0, 6), ux, uy - h/2 + 1);
+  ctx.fillText(utype.name.substring(0, 7), ux, uy - h/2 + 1);
 
-  ctx.font = '8px Courier New';
-  ctx.fillText(utype.at + '/' + utype.df, ux, uy + 4);
+  // Line 2: AT/AP (attack factors)
+  ctx.font = '7px Courier New';
+  ctx.fillText(utype.at + '/' + utype.ap, ux, uy - 2);
+
+  // Line 3: DF-MOV (defense factor and movement)
+  ctx.fillText(utype.df + '-' + utype.mp, ux, uy + 7);
 
   if (utype.armored) {
     ctx.strokeStyle = textColor;
@@ -1901,6 +1936,25 @@ function drawUnitCounter(ux, uy, u, utype) {
     ctx.beginPath();
     ctx.arc(dotX, dotY, 3, 0, Math.PI * 2);
     ctx.fill();
+  }
+}
+
+function drawWrecks() {
+  for (const w of state.wrecks) {
+    const { x, y } = hexToPixel(w.col, w.row);
+    // Draw a dark "X" wreck marker
+    ctx.strokeStyle = 'rgba(80,40,30,0.7)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x - 8, y - 6); ctx.lineTo(x + 8, y + 6);
+    ctx.moveTo(x + 8, y - 6); ctx.lineTo(x - 8, y + 6);
+    ctx.stroke();
+    // Small label
+    ctx.font = '6px Courier New';
+    ctx.fillStyle = 'rgba(120,60,40,0.8)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('wreck', x, y + 7);
   }
 }
 
@@ -1944,6 +1998,7 @@ function render() {
   applyViewTransform();
   drawMap();
   drawOverlays();
+  drawWrecks();
   drawUnits();
   requestAnimationFrame(render);
 }
@@ -2054,11 +2109,18 @@ function enterFireMode() {
   const unit = getSelectedUnit();
   if (!unit) { showToast('Select a unit first'); return; }
   if (unit.side !== state.activeSide) { showToast('Not your unit'); return; }
-  if (state.phase !== PHASE_COMBAT) { showToast('Can only fire during Combat phase'); return; }
+  const isCAT = state.phase === PHASE_CLOSE_ASSAULT;
+  if (state.phase !== PHASE_COMBAT && !isCAT) { showToast('Can only fire during Combat or Close Assault phase'); return; }
   if (unit.fired) { showToast('Unit already fired this turn'); return; }
-  if (unit.moved) { showToast('Unit already moved — cannot fire'); return; }
+  if (!isCAT && unit.moved) { showToast('Unit already moved — cannot fire'); return; }
 
   const utype = UNIT_TYPES[unit.type];
+
+  // Close Assault: only infantry/engineers can CAT, must be adjacent to enemy
+  if (isCAT) {
+    if (utype.class !== INF) { showToast('Only infantry/engineers can close assault'); return; }
+  }
+
   if (utype.at === 0 && utype.ap === 0) { showToast(`${utype.name} has no attack capability`); return; }
 
   state.fireMode = true;
@@ -2066,18 +2128,30 @@ function enterFireMode() {
   state.reachableHexes = null;
 
   const targets = new Map();
-  for (const enemy of state.units) {
-    if (enemy.destroyed || !enemy.placed || enemy.side === unit.side) continue;
-    const dist = hexDistance(unit.col, unit.row, enemy.col, enemy.row);
-    if (dist <= 0 || dist > utype.range) continue;
-    const key = hexKey(enemy.col, enemy.row);
-    const los = hasLOS(unit.col, unit.row, enemy.col, enemy.row);
-    if (utype.indirect) {
-      if (!targets.has(key)) {
-        targets.set(key, { spotted: los || hasSpotter(unit.side, enemy.col, enemy.row) });
+
+  if (isCAT) {
+    // Close Assault: only adjacent hexes
+    const neighbors = hexNeighbors(unit.col, unit.row);
+    for (const n of neighbors) {
+      const enemies = getUnitsAt(n.col, n.row).filter(e => e.side !== unit.side && !e.destroyed);
+      if (enemies.length > 0) {
+        targets.set(hexKey(n.col, n.row), { spotted: true, cat: true });
       }
-    } else {
-      if (los) targets.set(key, { spotted: true });
+    }
+  } else {
+    for (const enemy of state.units) {
+      if (enemy.destroyed || !enemy.placed || enemy.side === unit.side) continue;
+      const dist = hexDistance(unit.col, unit.row, enemy.col, enemy.row);
+      if (dist <= 0 || dist > utype.range) continue;
+      const key = hexKey(enemy.col, enemy.row);
+      const los = hasLOS(unit.col, unit.row, enemy.col, enemy.row);
+      if (utype.indirect) {
+        if (!targets.has(key)) {
+          targets.set(key, { spotted: los || hasSpotter(unit.side, enemy.col, enemy.row) });
+        }
+      } else {
+        if (los) targets.set(key, { spotted: true });
+      }
     }
   }
   state.targetableHexes = targets;
@@ -2092,6 +2166,82 @@ function executeMove(unit, destCol, destRow) {
   state.moveMode = false;
   state.reachableHexes = null;
   addLog(`${UNIT_TYPES[unit.type].name} moves from ${from} to (${destCol},${destRow})`, 'log-move');
+  updateUI();
+}
+
+function executeOverrun(attacker, targetCol, targetRow) {
+  const atype = UNIT_TYPES[attacker.type];
+  const defenders = getUnitsAt(targetCol, targetRow).filter(u => u.side !== attacker.side && !u.destroyed);
+  if (defenders.length === 0) {
+    // No enemies left, just move in
+    executeMove(attacker, targetCol, targetRow);
+    return;
+  }
+
+  const defender = defenders.reduce((best, u) => {
+    const df = UNIT_TYPES[u.type].df * TERRAIN_INFO[state.map[u.col][u.row]].dfMod;
+    const bestDf = UNIT_TYPES[best.type].df * TERRAIN_INFO[state.map[best.col][best.row]].dfMod;
+    return df > bestDf ? u : best;
+  });
+  const dtype = UNIT_TYPES[defender.type];
+
+  let attackFactor = dtype.armored ? atype.at : atype.ap;
+  if (attackFactor <= 0) {
+    showToast(`${atype.name} has no effective attack for overrun`);
+    return;
+  }
+
+  const terrainMod = TERRAIN_INFO[state.map[defender.col][defender.row]].dfMod;
+  const terrainName = TERRAIN_INFO[state.map[defender.col][defender.row]].name;
+  const defenseFactor = dtype.df * terrainMod;
+  let ratio = attackFactor / defenseFactor;
+
+  // Determine base CRT column
+  let crtColIdx;
+  if (ratio < 0.34) crtColIdx = 0;
+  else if (ratio < 0.5) crtColIdx = 1;
+  else if (ratio < 1.0) crtColIdx = 2;
+  else if (ratio < 2.0) crtColIdx = 3;
+  else if (ratio < 3.0) crtColIdx = 4;
+  else if (ratio < 4.0) crtColIdx = 5;
+  else if (ratio < 5.0) crtColIdx = 6;
+  else if (ratio < 6.0) crtColIdx = 7;
+  else crtColIdx = 8;
+
+  // Overrun: shift one column in attacker's favor (max 6:1)
+  crtColIdx = Math.min(crtColIdx + 1, 8);
+  const crtCol = CRT_COLUMNS[crtColIdx];
+
+  // Overrun: -2 to die roll (clamped to 0)
+  const rawRoll = Math.floor(Math.random() * 6);
+  const roll = Math.max(0, rawRoll - 2);
+  const result = CRT[crtCol][roll];
+  const dieDisplay = rawRoll + 1;
+
+  const from = `(${attacker.col},${attacker.row})`;
+  addLog(
+    `${atype.name} OVERRUN from ${from} into (${targetCol},${targetRow}) vs ${dtype.name} — ${attackFactor} vs ${defenseFactor} — ${crtCol} odds (+1 col shift) — die:${dieDisplay}-2 → ${result}`,
+    'log-combat'
+  );
+
+  // Apply result
+  applyCombatResult(result, attacker, defender);
+
+  // If attacker survived and defender's hex is clear, move in
+  if (!attacker.destroyed) {
+    const remainingEnemies = getUnitsAt(targetCol, targetRow).filter(u => u.side !== attacker.side && !u.destroyed);
+    if (remainingEnemies.length === 0) {
+      attacker.col = targetCol;
+      attacker.row = targetRow;
+      addLog(`  ${atype.name} advances into (${targetCol},${targetRow})`, 'log-move');
+    } else {
+      addLog(`  ${atype.name} halted — enemies remain in hex`, 'log-result');
+    }
+  }
+
+  attacker.moved = true;
+  state.moveMode = false;
+  state.reachableHexes = null;
   updateUI();
 }
 
@@ -2111,6 +2261,11 @@ function calcAttackPreview(attacker, targetCol, targetRow) {
   let attackFactor = dtype.armored ? atype.at : atype.ap;
   if (attackFactor <= 0) return null;
 
+  // Dispersed attacker: halve attack factor
+  if (attacker.dispersed) {
+    attackFactor = Math.max(1, Math.floor(attackFactor / 2));
+  }
+
   const targetKey = hexKey(targetCol, targetRow);
   const targetData = state.targetableHexes ? state.targetableHexes.get(targetKey) : null;
   const isIndirect = atype.indirect;
@@ -2127,26 +2282,33 @@ function calcAttackPreview(attacker, targetCol, targetRow) {
 
   const terrainMod = TERRAIN_INFO[state.map[defender.col][defender.row]].dfMod;
   const terrainName = TERRAIN_INFO[state.map[defender.col][defender.row]].name;
-  const defenseFactor = dtype.df * terrainMod;
+  // Dispersed defender: halve defense factor
+  const baseDf = defender.dispersed ? Math.max(1, Math.floor(dtype.df / 2)) : dtype.df;
+  const defenseFactor = baseDf * terrainMod;
   let ratio = attackFactor / defenseFactor;
 
+  const isCAT = state.phase === PHASE_CLOSE_ASSAULT;
   let crtCol;
-  if (ratio < 0.34) crtCol = '1:4';
-  else if (ratio < 0.5) crtCol = '1:3';
-  else if (ratio < 1.0) crtCol = '1:2';
-  else if (ratio < 2.0) crtCol = '1:1';
-  else if (ratio < 3.0) crtCol = '2:1';
-  else if (ratio < 4.0) crtCol = '3:1';
-  else if (ratio < 5.0) crtCol = '4:1';
-  else if (ratio < 6.0) crtCol = '5:1';
-  else crtCol = '6:1';
+  if (isCAT) {
+    crtCol = 'CAT';
+  } else {
+    if (ratio < 0.34) crtCol = '1:4';
+    else if (ratio < 0.5) crtCol = '1:3';
+    else if (ratio < 1.0) crtCol = '1:2';
+    else if (ratio < 2.0) crtCol = '1:1';
+    else if (ratio < 3.0) crtCol = '2:1';
+    else if (ratio < 4.0) crtCol = '3:1';
+    else if (ratio < 5.0) crtCol = '4:1';
+    else if (ratio < 6.0) crtCol = '5:1';
+    else crtCol = '6:1';
+  }
 
   const outcomes = CRT[crtCol];
 
   return {
     attacker, defender, atype, dtype,
     attackFactor, defenseFactor, terrainMod, terrainName,
-    crtCol, outcomes, observeLabel, isIndirect, targetCol, targetRow
+    crtCol, outcomes, observeLabel, isIndirect, isCAT, targetCol, targetRow
   };
 }
 
@@ -2177,6 +2339,12 @@ function showAttackPreview(preview) {
   html += `<div class="preview-detail">Attack: ${preview.attackFactor} ${preview.dtype.armored ? '(AT)' : '(AP)'}${preview.observeLabel ? ' [' + preview.observeLabel + ']' : ''}</div>`;
   html += `<div class="preview-detail">Defense: ${preview.dtype.df} x${preview.terrainMod} (${preview.terrainName}) = ${preview.defenseFactor}</div>`;
   html += `<div class="preview-outcomes">${outcomesHtml}</div>`;
+  if (preview.isIndirect) {
+    html += `<div class="preview-detail" style="color:#d4a06e;font-style:italic">Indirect fire — will resolve next combat phase</div>`;
+  }
+  if (preview.isCAT) {
+    html += `<div class="preview-detail" style="color:#e0a040;font-style:italic">Close Assault — uses CAT column</div>`;
+  }
   const hintText = state.pendingFire ? 'Click again to confirm, Esc to cancel' : 'Click target to lock in, Esc to cancel';
   html += `<div class="preview-hint">${hintText}</div>`;
 
@@ -2218,9 +2386,32 @@ function executeFire(attacker, targetCol, targetRow) {
     return;
   }
 
-  // Confirmed! Execute the attack
+  // Confirmed! Execute the attack (or queue if indirect fire)
   const preview = calcAttackPreview(attacker, targetCol, targetRow);
   if (!preview) return;
+
+  const atype = UNIT_TYPES[attacker.type];
+
+  // Indirect fire: queue order for next turn instead of resolving now
+  if (atype.indirect) {
+    attacker.fired = true;
+    state.fireMode = false;
+    state.targetableHexes = null;
+    state.pendingFire = null;
+    hideAttackPreview();
+
+    state.ifOrders.push({
+      attackerId: attacker.id,
+      targetCol, targetRow,
+      side: attacker.side,
+      turnOrdered: state.turn,
+    });
+
+    addLog(`${atype.name} plots indirect fire at (${targetCol},${targetRow}) — will resolve next turn`, 'log-combat');
+    showToast('IF order queued — resolves next combat phase');
+    updateUI();
+    return;
+  }
 
   const roll = Math.floor(Math.random() * 6);
   const result = CRT[preview.crtCol][roll];
@@ -2254,7 +2445,8 @@ function applyCombatResult(result, attacker, defender) {
         defender.destroyed = true;
         addLog(`  ${UNIT_TYPES[defender.type].name} cannot retreat — ELIMINATED!`, 'log-result');
       } else {
-        addLog(`  ${UNIT_TYPES[defender.type].name} retreats to (${defender.col},${defender.row})`, 'log-result');
+        defender.dispersed = true;
+        addLog(`  ${UNIT_TYPES[defender.type].name} retreats to (${defender.col},${defender.row}) — DISPERSED`, 'log-result');
       }
       break;
     }
@@ -2269,7 +2461,8 @@ function applyCombatResult(result, attacker, defender) {
         attacker.destroyed = true;
         addLog(`  ${UNIT_TYPES[attacker.type].name} cannot retreat — ELIMINATED!`, 'log-result');
       } else {
-        addLog(`  ${UNIT_TYPES[attacker.type].name} retreats to (${attacker.col},${attacker.row})`, 'log-result');
+        attacker.dispersed = true;
+        addLog(`  ${UNIT_TYPES[attacker.type].name} retreats to (${attacker.col},${attacker.row}) — DISPERSED`, 'log-result');
       }
       break;
     }
@@ -2279,14 +2472,20 @@ function applyCombatResult(result, attacker, defender) {
       break;
   }
 
-  // Track losses
+  // Track losses and place wrecks
   if (attacker.destroyed) {
     if (attacker.side === ALLIED) state.alliedLosses++;
     else state.germanLosses++;
+    if (UNIT_TYPES[attacker.type].armored) {
+      state.wrecks.push({ col: attacker.col, row: attacker.row, name: UNIT_TYPES[attacker.type].name });
+    }
   }
   if (defender.destroyed) {
     if (defender.side === ALLIED) state.alliedLosses++;
     else state.germanLosses++;
+    if (UNIT_TYPES[defender.type].armored) {
+      state.wrecks.push({ col: defender.col, row: defender.row, name: UNIT_TYPES[defender.type].name });
+    }
   }
 
   if (attacker.destroyed && attacker.id === state.selectedUnitId) {
@@ -2314,6 +2513,96 @@ function retreatUnit(unit, awayFrom) {
     return true;
   }
   return false;
+}
+
+// Resolve indirect fire orders queued last turn for the given side
+function resolveIFOrders(side) {
+  const orders = state.ifOrders.filter(o => o.side === side);
+  // Remove resolved orders
+  state.ifOrders = state.ifOrders.filter(o => o.side !== side);
+
+  if (orders.length === 0) return;
+  addLog(`— Resolving Indirect Fire Orders —`, 'log-phase');
+
+  for (const order of orders) {
+    const attacker = state.units.find(u => u.id === order.attackerId);
+    if (!attacker || attacker.destroyed) {
+      addLog(`  IF order cancelled — firing unit destroyed`, 'log-result');
+      continue;
+    }
+    const atype = UNIT_TYPES[attacker.type];
+    const defenders = getUnitsAt(order.targetCol, order.targetRow).filter(u => u.side !== side && !u.destroyed);
+    if (defenders.length === 0) {
+      addLog(`  ${atype.name} IF at (${order.targetCol},${order.targetRow}) — no targets present`, 'log-result');
+      continue;
+    }
+
+    // Each defender in hex is attacked separately, IF strength divided equally
+    const totalAP = atype.ap;
+    const perTarget = Math.max(1, Math.floor(totalAP / defenders.length));
+
+    for (const defender of defenders) {
+      const dtype = UNIT_TYPES[defender.type];
+      const attackFactor = dtype.armored ? Math.max(1, Math.floor(atype.at / defenders.length)) : perTarget;
+
+      // Check observation
+      const los = hasLOS(attacker.col, attacker.row, defender.col, defender.row);
+      const observed = los || hasSpotter(side, defender.col, defender.row);
+      const effectiveAttack = observed ? attackFactor : Math.max(1, Math.floor(attackFactor / 2));
+      const observeLabel = observed ? 'observed' : 'unobserved, halved';
+
+      const terrainMod = TERRAIN_INFO[state.map[defender.col][defender.row]].dfMod;
+      const terrainName = TERRAIN_INFO[state.map[defender.col][defender.row]].name;
+      const defenseFactor = dtype.df * terrainMod;
+
+      let ratio = effectiveAttack / defenseFactor;
+      let crtCol;
+      if (ratio < 0.34) crtCol = '1:4';
+      else if (ratio < 0.5) crtCol = '1:3';
+      else if (ratio < 1.0) crtCol = '1:2';
+      else if (ratio < 2.0) crtCol = '1:1';
+      else if (ratio < 3.0) crtCol = '2:1';
+      else if (ratio < 4.0) crtCol = '3:1';
+      else if (ratio < 5.0) crtCol = '4:1';
+      else if (ratio < 6.0) crtCol = '5:1';
+      else crtCol = '6:1';
+
+      const roll = Math.floor(Math.random() * 6);
+      const result = CRT[crtCol][roll];
+      const dieDisplay = roll + 1;
+
+      addLog(
+        `${atype.name} IF resolves vs ${dtype.name} [${observeLabel}] — ${effectiveAttack} vs ${dtype.df}x${terrainMod}(${terrainName})=${defenseFactor} — ${crtCol} odds — die:${dieDisplay} → ${result}`,
+        'log-combat'
+      );
+
+      // For IF, attacker results (AE/AR) are ignored — attacker is not at risk
+      if (result === 'DE') {
+        defender.destroyed = true;
+        addLog(`  ${dtype.name} ELIMINATED by indirect fire!`, 'log-result');
+        if (defender.side === ALLIED) state.alliedLosses++;
+        else state.germanLosses++;
+      } else if (result === 'DR') {
+        const retreated = retreatUnit(defender, attacker);
+        if (!retreated) {
+          defender.destroyed = true;
+          addLog(`  ${dtype.name} cannot retreat — ELIMINATED!`, 'log-result');
+          if (defender.side === ALLIED) state.alliedLosses++;
+          else state.germanLosses++;
+        } else {
+          addLog(`  ${dtype.name} retreats to (${defender.col},${defender.row})`, 'log-result');
+        }
+      } else if (result === 'EX') {
+        // Exchange for IF: defender eliminated, attacker safe (per Panzer Leader IF rules)
+        defender.destroyed = true;
+        addLog(`  ${dtype.name} ELIMINATED by indirect fire (exchange)!`, 'log-result');
+        if (defender.side === ALLIED) state.alliedLosses++;
+        else state.germanLosses++;
+      } else {
+        addLog(`  ${dtype.name} survives (${result})`, 'log-result');
+      }
+    }
+  }
 }
 
 function checkReinforcements(side) {
@@ -2483,7 +2772,7 @@ function advancePhase() {
   if (!isPlacing) {
     const available = state.units.filter(u => !u.destroyed && u.placed && u.side === state.activeSide && !u.fired && !u.moved);
     if (available.length > 0) {
-      const phaseLabel = state.phase === PHASE_COMBAT ? 'Combat' : 'Movement';
+      const phaseLabel = state.phase === PHASE_COMBAT ? 'Combat' : state.phase === PHASE_CLOSE_ASSAULT ? 'Close Assault' : 'Movement';
       showConfirmModal(
         `End ${phaseLabel} Phase?`,
         `${available.length} unit(s) have not acted this phase.`,
@@ -2546,6 +2835,7 @@ function doAdvancePhase() {
       // Done placing reinforcements, proceed to combat (same side, no export)
       state.phase = PHASE_COMBAT;
       addLog(`— ${sideLabel(state.activeSide)} Combat Phase —`, 'log-phase');
+      resolveIFOrders(state.activeSide);
       renderRack();
       resizeCanvas();
       updateUI();
@@ -2559,23 +2849,58 @@ function doAdvancePhase() {
     renderRack();
     resizeCanvas();
     updateUI();
-  } else {
-    // End of movement: reset flags, transition to other side, then offer export
-    for (const u of state.units) {
-      if (u.side === state.activeSide && u.placed) {
-        u.fired = false;
-        u.moved = false;
+  } else if (state.phase === PHASE_MOVEMENT) {
+    // Check if any infantry/engineers are adjacent to enemies (eligible for CAT)
+    const catEligible = state.units.filter(u => {
+      if (u.destroyed || !u.placed || u.side !== state.activeSide) return false;
+      if (u.fired) return false; // units that fired cannot CAT
+      const ut = UNIT_TYPES[u.type];
+      if (ut.class !== INF) return false;
+      // Check if adjacent to any enemy
+      const neighbors = hexNeighbors(u.col, u.row);
+      return neighbors.some(n => {
+        const enemies = getUnitsAt(n.col, n.row).filter(e => e.side !== u.side && !e.destroyed);
+        return enemies.length > 0;
+      });
+    });
+    if (catEligible.length > 0) {
+      state.phase = PHASE_CLOSE_ASSAULT;
+      // Reset fired flags for CAT-eligible units so they can act in this phase
+      for (const u of catEligible) {
+        u.catEligible = true;
       }
+      addLog(`— ${sideLabel(state.activeSide)} Close Assault Phase —`, 'log-phase');
+      renderRack();
+      resizeCanvas();
+      updateUI();
+    } else {
+      // No CAT-eligible units, skip to end
+      endPlayerSegment();
     }
-    updateObjectiveControl();
-    const winner = checkVictory();
-    if (winner) {
-      showVictoryModal(winner);
-      return;
-    }
-    finishPhaseAdvance();
-    showExportModal();
+  } else if (state.phase === PHASE_CLOSE_ASSAULT) {
+    endPlayerSegment();
+  } else {
+    endPlayerSegment();
   }
+}
+
+function endPlayerSegment() {
+  // End of segment: reset flags, transition to other side, then offer export
+  for (const u of state.units) {
+    if (u.side === state.activeSide && u.placed) {
+      u.fired = false;
+      u.moved = false;
+      delete u.catEligible;
+    }
+  }
+  updateObjectiveControl();
+  const winner = checkVictory();
+  if (winner) {
+    showVictoryModal(winner);
+    return;
+  }
+  finishPhaseAdvance();
+  showExportModal();
 }
 
 function buildTurnSummary() {
@@ -2680,6 +3005,7 @@ function exportGameState() {
     victoryConditions: state.victoryConditions,
     alliedLosses: state.alliedLosses,
     germanLosses: state.germanLosses,
+    ifOrders: state.ifOrders,
     turnSummary: turnSummary,
   };
   const json = JSON.stringify(data);
@@ -2736,6 +3062,7 @@ function buildSharePayload() {
     victoryConditions: state.victoryConditions,
     alliedLosses: state.alliedLosses,
     germanLosses: state.germanLosses,
+    ifOrders: state.ifOrders,
   };
 }
 
@@ -2767,6 +3094,7 @@ function importGameState(encoded) {
   state.reachableHexes = null;
   state.targetableHexes = null;
   state.pendingFire = null;
+  state.ifOrders = data.ifOrders || [];
   state.rack = data.rack || [];
   state.selectedRackIndex = -1;
   state.hoverHex = null;
@@ -2792,9 +3120,23 @@ function importGameState(encoded) {
   }
 }
 
+function recoverDispersedUnits(side) {
+  let recovered = 0;
+  for (const u of state.units) {
+    if (u.side === side && u.dispersed && !u.destroyed && u.placed) {
+      u.dispersed = false;
+      recovered++;
+    }
+  }
+  if (recovered > 0) {
+    addLog(`  ${recovered} ${sideLabel(side)} unit(s) recover from dispersal`, 'log-result');
+  }
+}
+
 function finishPhaseAdvance() {
   if (state.activeSide === ALLIED) {
     state.activeSide = GERMAN;
+    recoverDispersedUnits(GERMAN);
     if (checkReinforcements(GERMAN)) {
       state.phase = PHASE_REINFORCEMENT;
       loadRackForSide(GERMAN, state.turn);
@@ -2806,9 +3148,11 @@ function finishPhaseAdvance() {
     }
     state.phase = PHASE_COMBAT;
     addLog(`— German Combat Phase —`, 'log-phase');
+    resolveIFOrders(GERMAN);
   } else {
     state.activeSide = ALLIED;
     state.turn++;
+    recoverDispersedUnits(ALLIED);
     addLog(`═══ TURN ${state.turn} ═══`, 'log-phase');
     if (checkReinforcements(ALLIED)) {
       state.phase = PHASE_REINFORCEMENT;
@@ -2821,6 +3165,7 @@ function finishPhaseAdvance() {
     }
     state.phase = PHASE_COMBAT;
     addLog(`— Allied Combat Phase —`, 'log-phase');
+    resolveIFOrders(ALLIED);
   }
   renderRack();
   resizeCanvas();
@@ -2908,7 +3253,12 @@ function handleHexClick(col, row) {
     if (state.reachableHexes.has(key)) {
       const unit = getSelectedUnit();
       if (unit) {
-        executeMove(unit, col, row);
+        const hexData = state.reachableHexes.get(key);
+        if (hexData.overrun) {
+          executeOverrun(unit, col, row);
+        } else {
+          executeMove(unit, col, row);
+        }
         return;
       }
     }
@@ -3303,7 +3653,7 @@ function updateUI() {
     phaseText = sideLabel(state.activeSide) + ' Reinforcement Phase';
   } else {
     phaseText = sideLabel(state.activeSide) + ' ' +
-      (state.phase === PHASE_COMBAT ? 'Combat' : 'Movement') + ' Phase';
+      (state.phase === PHASE_COMBAT ? 'Combat' : state.phase === PHASE_CLOSE_ASSAULT ? 'Close Assault' : 'Movement') + ' Phase';
   }
   // Add units-remaining counter for combat/movement phases
   if (!isPlacing) {
@@ -3338,7 +3688,7 @@ function updateUI() {
         <span class="stat-label">Range:</span><span class="stat-value">${utype.range}</span>
         <span class="stat-label">MP:</span><span class="stat-value">${utype.mp}</span>
         <span class="stat-label">Position:</span><span class="stat-value">(${sel.col},${sel.row})</span>
-        <span class="stat-label">Status:</span><span class="stat-value">${sel.fired ? 'FIRED' : sel.moved ? 'MOVED' : 'Ready'}</span>
+        <span class="stat-label">Status:</span><span class="stat-value">${sel.dispersed ? 'DISPERSED' : ''}${sel.fired ? ' FIRED' : sel.moved ? ' MOVED' : sel.dispersed ? '' : 'Ready'}</span>
       </div>
     `;
   } else {
@@ -3364,7 +3714,9 @@ function updateUI() {
     btnMove.className = '';
     btnReturn.className = 'hidden';
 
-    const canFire = sel && sel.side === state.activeSide && state.phase === PHASE_COMBAT && !sel.fired && !sel.moved;
+    const canFireNormal = sel && sel.side === state.activeSide && state.phase === PHASE_COMBAT && !sel.fired && !sel.moved;
+    const canFireCAT = sel && sel.side === state.activeSide && state.phase === PHASE_CLOSE_ASSAULT && !sel.fired && UNIT_TYPES[sel.type].class === INF;
+    const canFire = canFireNormal || canFireCAT;
     const canMove = sel && sel.side === state.activeSide && state.phase === PHASE_MOVEMENT && !sel.moved && !sel.fired;
     const hasAvailable = state.units.some(u => !u.destroyed && u.placed && u.side === state.activeSide && !u.fired && !u.moved);
 
@@ -3376,7 +3728,8 @@ function updateUI() {
     // Dynamic tooltips for disabled buttons
     if (!canFire) {
       if (!sel) btnFire.title = 'Select a unit first';
-      else if (state.phase !== PHASE_COMBAT) btnFire.title = 'Only available during Combat phase';
+      else if (state.phase !== PHASE_COMBAT && state.phase !== PHASE_CLOSE_ASSAULT) btnFire.title = 'Only available during Combat or Close Assault phase';
+      else if (state.phase === PHASE_CLOSE_ASSAULT && sel && UNIT_TYPES[sel.type].class !== INF) btnFire.title = 'Only infantry/engineers can close assault';
       else if (sel.fired) btnFire.title = 'Unit already fired this turn';
       else if (sel.moved) btnFire.title = 'Unit already moved — cannot fire';
       else if (sel.side !== state.activeSide) btnFire.title = 'Not your unit';
