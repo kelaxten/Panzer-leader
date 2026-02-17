@@ -756,6 +756,8 @@ const MECH = 'mechanized';
 const AT_GUN = 'at_gun';
 const ART = 'artillery';
 const RECON = 'recon';
+const AIR = 'aircraft';
+const NAVAL = 'naval';
 
 // Unit type definitions
 const UNIT_TYPES = {
@@ -805,7 +807,7 @@ const UNIT_TYPES = {
   'ge_pzgren':      { name: 'Panzergren.',    class: MECH,   armored: false, mp: 4,  at: 2,  ap: 5,  df: 5,  range: 1,  symbol: 'X', side: GERMAN },
   'ge_ss_pzgren':   { name: 'SS Pzgren.',     class: MECH,   armored: false, mp: 4,  at: 2,  ap: 6,  df: 6,  range: 1,  symbol: 'X', side: GERMAN },
   'ge_fallschirm':  { name: 'Fallschirmjgr',  class: INF,    armored: false, mp: 4,  at: 2,  ap: 6,  df: 6,  range: 1,  symbol: 'X', side: GERMAN },
-  'ge_pioneer':     { name: 'Pioneer',        class: INF,    armored: false, mp: 4,  at: 2,  ap: 5,  df: 4,  range: 1,  symbol: 'X', side: GERMAN },
+  'ge_pioneer':     { name: 'Pioneer',        class: INF,    armored: false, mp: 4,  at: 2,  ap: 5,  df: 4,  range: 1,  symbol: 'X', side: GERMAN, engineer: true },
   'ge_mg':          { name: 'MG42 Team',      class: INF,    armored: false, mp: 2,  at: 0,  ap: 6,  df: 2,  range: 4,  symbol: '.', side: GERMAN },
   'ge_pzschreck':   { name: 'Panzerschreck',  class: INF,    armored: false, mp: 4,  at: 6,  ap: 1,  df: 1,  range: 2,  symbol: '|', side: GERMAN },
   // ── German Omaha-specific ──
@@ -850,12 +852,20 @@ const UNIT_TYPES = {
   // ── American AA ──
   'us_bofors':      { name: '40mm Bofors',    class: INF,    armored: false, mp: 2,  at: 2,  ap: 6,  df: 1,  range: 6,  symbol: '*', side: ALLIED },
   'us_quad50':      { name: 'Quad .50',       class: INF,    armored: false, mp: 2,  at: 0,  ap: 8,  df: 1,  range: 4,  symbol: '*', side: ALLIED },
+  // ── American Aircraft ──
+  'us_p47':         { name: 'P-47',           class: AIR,    armored: false, mp: 0,  at: 8,  ap: 12, df: 0,  range: 99, symbol: '^', side: ALLIED, aircraft: true },
+  'us_p51':         { name: 'P-51',           class: AIR,    armored: false, mp: 0,  at: 4,  ap: 8,  df: 0,  range: 99, symbol: '^', side: ALLIED, aircraft: true },
+  'us_p38':         { name: 'P-38',           class: AIR,    armored: false, mp: 0,  at: 6,  ap: 10, df: 0,  range: 99, symbol: '^', side: ALLIED, aircraft: true },
+  // ── American Naval Support ──
+  'us_dd_ship':     { name: 'DD Destroyer',   class: NAVAL,  armored: false, mp: 0,  at: 2,  ap: 16, df: 0,  range: 30, symbol: '~', side: ALLIED, indirect: true, naval: true },
+  'us_cl_ship':     { name: 'CL Cruiser',     class: NAVAL,  armored: false, mp: 0,  at: 2,  ap: 20, df: 0,  range: 40, symbol: '~', side: ALLIED, indirect: true, naval: true },
+  'us_bb_ship':     { name: 'BB Battleship',  class: NAVAL,  armored: false, mp: 0,  at: 2,  ap: 30, df: 0,  range: 50, symbol: '~', side: ALLIED, indirect: true, naval: true },
   // ── American Infantry ──
   'us_inf':         { name: 'Rifle Plt',      class: INF,    armored: false, mp: 4,  at: 1,  ap: 4,  df: 4,  range: 1,  symbol: 'X', side: ALLIED },
   'us_armored_inf': { name: 'Armored Inf',    class: INF,    armored: false, mp: 4,  at: 2,  ap: 5,  df: 5,  range: 1,  symbol: 'X', side: ALLIED },
   'us_ranger':      { name: 'Rangers',        class: INF,    armored: false, mp: 4,  at: 2,  ap: 6,  df: 5,  range: 1,  symbol: 'X', side: ALLIED },
   'us_airborne':    { name: 'Airborne',       class: INF,    armored: false, mp: 4,  at: 2,  ap: 6,  df: 5,  range: 1,  symbol: 'X', side: ALLIED },
-  'us_engineer':    { name: 'Engineers',      class: INF,    armored: false, mp: 4,  at: 2,  ap: 5,  df: 4,  range: 1,  symbol: 'X', side: ALLIED },
+  'us_engineer':    { name: 'Engineers',      class: INF,    armored: false, mp: 4,  at: 2,  ap: 5,  df: 4,  range: 1,  symbol: 'X', side: ALLIED, engineer: true },
   'us_mg':          { name: '.30 Cal MG',     class: INF,    armored: false, mp: 2,  at: 0,  ap: 6,  df: 2,  range: 4,  symbol: '.', side: ALLIED },
   'us_bazooka':     { name: 'Bazooka Team',   class: INF,    armored: false, mp: 4,  at: 4,  ap: 1,  df: 1,  range: 2,  symbol: '|', side: ALLIED },
   // ── American Omaha-specific ──
@@ -894,6 +904,7 @@ const PHASE_REINFORCEMENT = 'reinforcement';
 const PHASE_COMBAT = 'combat';
 const PHASE_MOVEMENT = 'movement';
 const PHASE_CLOSE_ASSAULT = 'close_assault';
+const PHASE_AIR = 'air';
 
 let state = {
   map: [],
@@ -1869,6 +1880,20 @@ function drawUnitSymbol(cx, cy, w, h, unitClass) {
       ctx.moveTo(cx - sw, cy + sh); ctx.lineTo(cx + sw, cy - sh);
       ctx.stroke();
       break;
+    case AIR: // Wing/chevron pointing up
+      ctx.beginPath();
+      ctx.moveTo(cx - sw, cy + sh * 0.5);
+      ctx.lineTo(cx, cy - sh);
+      ctx.lineTo(cx + sw, cy + sh * 0.5);
+      ctx.stroke();
+      break;
+    case NAVAL: // Wave symbol
+      ctx.beginPath();
+      ctx.moveTo(cx - sw, cy);
+      ctx.quadraticCurveTo(cx - sw * 0.5, cy - sh, cx, cy);
+      ctx.quadraticCurveTo(cx + sw * 0.5, cy + sh, cx + sw, cy);
+      ctx.stroke();
+      break;
   }
 }
 
@@ -1926,8 +1951,14 @@ function drawUnitCounter(ux, uy, u, utype) {
   ctx.font = '7px Courier New';
   ctx.fillText(utype.at + '/' + utype.ap, ux, uy - 2);
 
-  // Line 3: DF-MOV (defense factor and movement)
-  ctx.fillText(utype.df + '-' + utype.mp, ux, uy + 7);
+  // Line 3: DF-MOV (defense factor and movement) or class label for off-map units
+  if (utype.aircraft) {
+    ctx.fillText('AIR', ux, uy + 7);
+  } else if (utype.naval) {
+    ctx.fillText('NAVAL', ux, uy + 7);
+  } else {
+    ctx.fillText(utype.df + '-' + utype.mp, ux, uy + 7);
+  }
 
   if (utype.armored) {
     ctx.strokeStyle = textColor;
@@ -2145,11 +2176,17 @@ function enterFireMode() {
   if (!unit) { showToast('Select a unit first'); return; }
   if (unit.side !== state.activeSide) { showToast('Not your unit'); return; }
   const isCAT = state.phase === PHASE_CLOSE_ASSAULT;
-  if (state.phase !== PHASE_COMBAT && !isCAT) { showToast('Can only fire during Combat or Close Assault phase'); return; }
+  const isAirPhase = state.phase === PHASE_AIR;
+  if (state.phase !== PHASE_COMBAT && !isCAT && !isAirPhase) { showToast('Can only fire during Combat, Air, or Close Assault phase'); return; }
   if (unit.fired) { showToast('Unit already fired this turn'); return; }
-  if (!isCAT && unit.moved) { showToast('Unit already moved — cannot fire'); return; }
+  if (!isCAT && !isAirPhase && unit.moved) { showToast('Unit already moved — cannot fire'); return; }
 
   const utype = UNIT_TYPES[unit.type];
+
+  // Air Phase: only aircraft can fire
+  if (isAirPhase && !utype.aircraft) { showToast('Only aircraft can attack during Air Phase'); return; }
+  // Combat Phase: aircraft cannot fire (they use Air Phase)
+  if (state.phase === PHASE_COMBAT && utype.aircraft) { showToast('Aircraft attack during Air Phase, not Combat Phase'); return; }
 
   // Close Assault: only infantry/engineers can CAT, must be adjacent to enemy
   if (isCAT) {
@@ -2173,9 +2210,25 @@ function enterFireMode() {
         targets.set(hexKey(n.col, n.row), { spotted: true, cat: true });
       }
     }
+  } else if (unit.col === -1 && unit.row === -1) {
+    // Off-map units (aircraft, naval): can target any enemy hex on the map
+    for (const enemy of state.units) {
+      if (enemy.destroyed || !enemy.placed || enemy.side === unit.side || enemy.hidden) continue;
+      if (enemy.col === -1) continue; // can't target other off-map units
+      const key = hexKey(enemy.col, enemy.row);
+      if (utype.indirect) {
+        if (!targets.has(key)) {
+          targets.set(key, { spotted: hasSpotter(unit.side, enemy.col, enemy.row) });
+        }
+      } else {
+        // Aircraft always have clear sight to target
+        targets.set(key, { spotted: true });
+      }
+    }
   } else {
     for (const enemy of state.units) {
       if (enemy.destroyed || !enemy.placed || enemy.side === unit.side || enemy.hidden) continue;
+      if (enemy.col === -1) continue; // can't target off-map units
       const dist = hexDistance(unit.col, unit.row, enemy.col, enemy.row);
       if (dist <= 0 || dist > utype.range) continue;
       const key = hexKey(enemy.col, enemy.row);
@@ -2393,6 +2446,7 @@ function calcAttackPreview(attacker, targetCol, targetRow) {
   let ratio = attackFactor / defenseFactor;
 
   const isCAT = state.phase === PHASE_CLOSE_ASSAULT;
+  const isEngineerCAT = isCAT && atype.engineer;
   let crtCol;
   if (isCAT) {
     crtCol = 'CAT';
@@ -2413,7 +2467,7 @@ function calcAttackPreview(attacker, targetCol, targetRow) {
   return {
     attacker, defender, atype, dtype,
     attackFactor, defenseFactor, terrainMod, terrainName,
-    crtCol, outcomes, observeLabel, isIndirect, isCAT, targetCol, targetRow
+    crtCol, outcomes, observeLabel, isIndirect, isCAT, isEngineerCAT, targetCol, targetRow
   };
 }
 
@@ -2448,7 +2502,8 @@ function showAttackPreview(preview) {
     html += `<div class="preview-detail" style="color:#d4a06e;font-style:italic">Indirect fire — will resolve next combat phase</div>`;
   }
   if (preview.isCAT) {
-    html += `<div class="preview-detail" style="color:#e0a040;font-style:italic">Close Assault — uses CAT column</div>`;
+    const engLabel = preview.isEngineerCAT ? ' (engineer: -1 die roll)' : '';
+    html += `<div class="preview-detail" style="color:#e0a040;font-style:italic">Close Assault — uses CAT column${engLabel}</div>`;
   }
   const hintText = state.pendingFire ? 'Click again to confirm, Esc to cancel' : 'Click target to lock in, Esc to cancel';
   html += `<div class="preview-hint">${hintText}</div>`;
@@ -2519,9 +2574,71 @@ function executeFire(attacker, targetCol, targetRow) {
     return;
   }
 
-  const roll = Math.floor(Math.random() * 6);
+  const atype = UNIT_TYPES[attacker.type];
+
+  // Aircraft attacks: resolve AA fire first
+  if (atype.aircraft) {
+    attacker.fired = true;
+    state.fireMode = false;
+    state.targetableHexes = null;
+    state.pendingFire = null;
+    hideAttackPreview();
+
+    // Find enemy AA units — any unit with aa: true flag or AA-type weapons
+    const aaUnits = state.units.filter(u =>
+      !u.destroyed && u.placed && u.side !== attacker.side &&
+      u.col !== -1 && UNIT_TYPES[u.type].aa
+    );
+
+    let shotDown = false;
+    for (const aa of aaUnits) {
+      const aaType = UNIT_TYPES[aa.type];
+      const distToTarget = hexDistance(aa.col, aa.row, targetCol, targetRow);
+      if (distToTarget > aaType.range) continue;
+      const aaRoll = Math.floor(Math.random() * 6) + 1;
+      // AA hits on 5-6 (d6)
+      if (aaRoll >= 5) {
+        addLog(`  ${aaType.name} AA fire at ${atype.name} — roll:${aaRoll} → HIT! Aircraft shot down!`, 'log-combat');
+        attacker.destroyed = true;
+        shotDown = true;
+        break;
+      } else {
+        addLog(`  ${aaType.name} AA fire at ${atype.name} — roll:${aaRoll} → miss`, 'log-combat');
+      }
+    }
+
+    if (shotDown) {
+      updateUI();
+      return;
+    }
+
+    // Aircraft survived AA — resolve attack on CRT
+    const rawRoll = Math.floor(Math.random() * 6);
+    const roll = rawRoll;
+    const result = CRT[preview.crtCol][roll];
+    const dieDisplay = rawRoll + 1;
+
+    addLog(
+      `${atype.name} air attack on ${preview.dtype.name} — ${preview.attackFactor} vs ${preview.dtype.df}x${preview.terrainMod}(${preview.terrainName})=${preview.defenseFactor} — ${preview.crtCol} odds — die:${dieDisplay} → ${result}`,
+      'log-combat'
+    );
+
+    // For air attacks, attacker results (AE/AR) are ignored — aircraft leaves after attacking
+    if (result === 'AE' || result === 'AR') {
+      addLog(`  ${atype.name} attack result ${result} — aircraft returns to base unscathed`, 'log-result');
+    } else {
+      applyCombatResult(result, attacker, preview.defender);
+    }
+    updateUI();
+    return;
+  }
+
+  const rawRoll = Math.floor(Math.random() * 6);
+  // Engineer CAT bonus: -1 to die roll (better outcomes)
+  const roll = preview.isEngineerCAT ? Math.max(0, rawRoll - 1) : rawRoll;
   const result = CRT[preview.crtCol][roll];
-  const dieDisplay = roll + 1;
+  const dieDisplay = rawRoll + 1;
+  const engBonus = preview.isEngineerCAT ? ' (engineer -1)' : '';
 
   attacker.fired = true;
   attacker.hidden = false;
@@ -2532,7 +2649,7 @@ function executeFire(attacker, targetCol, targetRow) {
 
   const observeLog = preview.observeLabel ? ` [${preview.observeLabel}]` : '';
   addLog(
-    `${preview.atype.name} fires at ${preview.dtype.name}${observeLog} — ${preview.attackFactor} vs ${preview.dtype.df}x${preview.terrainMod}(${preview.terrainName})=${preview.defenseFactor} — ${preview.crtCol} odds — die:${dieDisplay} → ${result}`,
+    `${preview.atype.name} fires at ${preview.dtype.name}${observeLog} — ${preview.attackFactor} vs ${preview.dtype.df}x${preview.terrainMod}(${preview.terrainName})=${preview.defenseFactor} — ${preview.crtCol} odds — die:${dieDisplay}${engBonus} → ${result}`,
     'log-combat'
   );
 
@@ -2960,6 +3077,25 @@ function doAdvancePhase() {
   }
 
   if (state.phase === PHASE_COMBAT) {
+    // Check if there are available aircraft for this side
+    const availableAir = state.units.filter(u =>
+      !u.destroyed && u.placed && u.side === state.activeSide &&
+      UNIT_TYPES[u.type].aircraft && !u.fired
+    );
+    if (availableAir.length > 0) {
+      state.phase = PHASE_AIR;
+      addLog(`— ${sideLabel(state.activeSide)} Air Phase —`, 'log-phase');
+      renderRack();
+      resizeCanvas();
+      updateUI();
+    } else {
+      state.phase = PHASE_MOVEMENT;
+      addLog(`— ${sideLabel(state.activeSide)} Movement Phase —`, 'log-phase');
+      renderRack();
+      resizeCanvas();
+      updateUI();
+    }
+  } else if (state.phase === PHASE_AIR) {
     state.phase = PHASE_MOVEMENT;
     addLog(`— ${sideLabel(state.activeSide)} Movement Phase —`, 'log-phase');
     renderRack();
