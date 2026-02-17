@@ -795,11 +795,11 @@ const UNIT_TYPES = {
   // ── German AT Guns ──
   'ge_pak40':       { name: 'Pak 40',         class: AT_GUN, armored: false, mp: 2,  at: 14, ap: 4,  df: 2,  range: 8,  symbol: '|', side: GERMAN },
   'ge_pak43':       { name: 'Pak 43',         class: AT_GUN, armored: false, mp: 0,  at: 20, ap: 6,  df: 2,  range: 12, symbol: '|', side: GERMAN },
-  'ge_flak88':      { name: 'Flak 88',        class: AT_GUN, armored: false, mp: 2,  at: 16, ap: 6,  df: 2,  range: 10, symbol: '*', side: GERMAN },
+  'ge_flak88':      { name: 'Flak 88',        class: AT_GUN, armored: false, mp: 2,  at: 16, ap: 6,  df: 2,  range: 10, symbol: '*', side: GERMAN, aa: true },
   'ge_pak38':       { name: 'Pak 38',         class: AT_GUN, armored: false, mp: 2,  at: 8,  ap: 2,  df: 2,  range: 6,  symbol: '|', side: GERMAN },
   // ── German AA ──
-  'ge_flak38':      { name: '2cm Flak 38',    class: INF,    armored: false, mp: 2,  at: 0,  ap: 4,  df: 1,  range: 4,  symbol: '*', side: GERMAN },
-  'ge_wirbelwind':  { name: 'Wirbelwind',     class: ARM,    armored: true,  mp: 10, at: 0,  ap: 8,  df: 4,  range: 4,  symbol: '*', side: GERMAN },
+  'ge_flak38':      { name: '2cm Flak 38',    class: INF,    armored: false, mp: 2,  at: 0,  ap: 4,  df: 1,  range: 4,  symbol: '*', side: GERMAN, aa: true },
+  'ge_wirbelwind':  { name: 'Wirbelwind',     class: ARM,    armored: true,  mp: 10, at: 0,  ap: 8,  df: 4,  range: 4,  symbol: '*', side: GERMAN, aa: true },
   // ── German Infantry ──
   'ge_inf':         { name: 'Rifle Plt',      class: INF,    armored: false, mp: 4,  at: 1,  ap: 4,  df: 4,  range: 1,  symbol: 'X', side: GERMAN },
   'ge_grenadier':   { name: 'Grenadier',      class: INF,    armored: false, mp: 4,  at: 1,  ap: 5,  df: 5,  range: 1,  symbol: 'X', side: GERMAN },
@@ -850,8 +850,8 @@ const UNIT_TYPES = {
   'us_3inch':       { name: '3-inch AT',      class: AT_GUN, armored: false, mp: 2,  at: 12, ap: 4,  df: 2,  range: 8,  symbol: '|', side: ALLIED },
   'us_90mm':        { name: '90mm Gun',       class: AT_GUN, armored: false, mp: 0,  at: 16, ap: 6,  df: 2,  range: 10, symbol: '|', side: ALLIED },
   // ── American AA ──
-  'us_bofors':      { name: '40mm Bofors',    class: INF,    armored: false, mp: 2,  at: 2,  ap: 6,  df: 1,  range: 6,  symbol: '*', side: ALLIED },
-  'us_quad50':      { name: 'Quad .50',       class: INF,    armored: false, mp: 2,  at: 0,  ap: 8,  df: 1,  range: 4,  symbol: '*', side: ALLIED },
+  'us_bofors':      { name: '40mm Bofors',    class: INF,    armored: false, mp: 2,  at: 2,  ap: 6,  df: 1,  range: 6,  symbol: '*', side: ALLIED, aa: true },
+  'us_quad50':      { name: 'Quad .50',       class: INF,    armored: false, mp: 2,  at: 0,  ap: 8,  df: 1,  range: 4,  symbol: '*', side: ALLIED, aa: true },
   // ── American Aircraft ──
   'us_p47':         { name: 'P-47',           class: AIR,    armored: false, mp: 0,  at: 8,  ap: 12, df: 0,  range: 99, symbol: '^', side: ALLIED, aircraft: true },
   'us_p51':         { name: 'P-51',           class: AIR,    armored: false, mp: 0,  at: 4,  ap: 8,  df: 0,  range: 99, symbol: '^', side: ALLIED, aircraft: true },
@@ -1057,6 +1057,9 @@ function loadTestScenario() {
     { type: 'us_hellcat',   side: ALLIED, availableTurn: 3 },
     { type: 'us_priest',    side: ALLIED, availableTurn: 3 },
     { type: 'us_armored_inf', side: ALLIED, availableTurn: 3 },
+    // Allied — air support turn 2
+    { type: 'us_p47',       side: ALLIED, availableTurn: 2, offMap: true },
+    { type: 'us_p51',       side: ALLIED, availableTurn: 2, offMap: true },
     // German — initial
     { type: 'ge_panther',   side: GERMAN, availableTurn: 0 },
     { type: 'ge_pzivh',     side: GERMAN, availableTurn: 0 },
@@ -1077,6 +1080,14 @@ function loadTestScenario() {
   state.rack = [];
   state.allReinforcements = [];
   for (const entry of scenarioUnits) {
+    if (entry.offMap) {
+      if (entry.availableTurn === 0) {
+        // Off-map units available at start: auto-place immediately
+      } else {
+        state.allReinforcements.push(entry);
+      }
+      continue;
+    }
     if (entry.availableTurn === 0) {
       if (entry.side === ALLIED) {
         state.rack.push({ type: entry.type, side: entry.side });
@@ -1088,6 +1099,7 @@ function loadTestScenario() {
       state.allReinforcements.push(entry);
     }
   }
+  placeInitialOffMapUnits(scenarioUnits);
 
   state.selectedRackIndex = -1;
   state.selectedUnitId = null;
@@ -1354,12 +1366,28 @@ function loadOmahaScenario() {
     { type: 'us_18_inf',      side: ALLIED, availableTurn: 4 },
     { type: 'us_105mm',       side: ALLIED, availableTurn: 4 },
     { type: 'us_priest',      side: ALLIED, availableTurn: 4 },
+
+    // ── American Naval Support (off-map, available from Turn 1) ──
+    { type: 'us_dd_ship',     side: ALLIED, availableTurn: 0, offMap: true },
+    { type: 'us_dd_ship',     side: ALLIED, availableTurn: 0, offMap: true },
+    { type: 'us_cl_ship',     side: ALLIED, availableTurn: 0, offMap: true },
+
+    // ── American Air Support (off-map, available from Turn 2) ──
+    { type: 'us_p47',         side: ALLIED, availableTurn: 2, offMap: true },
   ];
 
   // German places first in Omaha, so German initial goes to rack, rest to reinforcements
   state.rack = [];
   state.allReinforcements = [];
   for (const entry of scenarioUnits) {
+    if (entry.offMap) {
+      if (entry.availableTurn === 0) {
+        // Off-map units available at start: auto-place immediately
+      } else {
+        state.allReinforcements.push(entry);
+      }
+      continue;
+    }
     if (entry.availableTurn === 0) {
       if (entry.side === GERMAN) {
         state.rack.push({ type: entry.type, side: entry.side });
@@ -1371,6 +1399,7 @@ function loadOmahaScenario() {
       state.allReinforcements.push(entry);
     }
   }
+  placeInitialOffMapUnits(scenarioUnits);
 
   state.selectedRackIndex = -1;
   state.selectedUnitId = null;
@@ -1405,9 +1434,26 @@ function loadRackForSide(side, turn) {
   }
   state.allReinforcements = remaining;
   for (const entry of toLoad) {
-    state.rack.push({ type: entry.type, side: entry.side });
+    if (entry.offMap) {
+      // Off-map units (aircraft, naval) auto-place at -1,-1
+      const unit = createUnit(entry.type, -1, -1);
+      state.units.push(unit);
+      addLog(`  ${UNIT_TYPES[entry.type].name} available (off-map)`, 'log-place');
+    } else {
+      state.rack.push({ type: entry.type, side: entry.side });
+    }
   }
   state.selectedRackIndex = -1;
+}
+
+// Place initial off-map units (called during scenario setup for turn-0 offMap entries)
+function placeInitialOffMapUnits(scenarioUnits) {
+  for (const entry of scenarioUnits) {
+    if (entry.offMap && entry.availableTurn === 0) {
+      const unit = createUnit(entry.type, -1, -1);
+      state.units.push(unit);
+    }
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -2161,6 +2207,7 @@ function enterMoveMode() {
   if (!unit) { showToast('Select a unit first'); return; }
   if (unit.side !== state.activeSide) { showToast('Not your unit'); return; }
   if (state.phase !== PHASE_MOVEMENT) { showToast('Can only move during Movement phase'); return; }
+  if (unit.col === -1 && unit.row === -1) { showToast('Off-map units cannot move'); return; }
   if (unit.moved) { showToast('Unit already moved this turn'); return; }
   if (unit.fired) { showToast('Unit already fired — cannot move'); return; }
 
@@ -2573,8 +2620,6 @@ function executeFire(attacker, targetCol, targetRow) {
     updateUI();
     return;
   }
-
-  const atype = UNIT_TYPES[attacker.type];
 
   // Aircraft attacks: resolve AA fire first
   if (atype.aircraft) {
@@ -3003,9 +3048,16 @@ function advancePhase() {
 
   // Check for unused units and confirm before advancing (combat/movement phases only)
   if (!isPlacing) {
-    const available = state.units.filter(u => !u.destroyed && u.placed && u.side === state.activeSide && !u.fired && !u.moved);
+    let available;
+    if (state.phase === PHASE_AIR) {
+      // Only count unfired aircraft during Air Phase
+      available = state.units.filter(u => !u.destroyed && u.placed && u.side === state.activeSide && !u.fired && UNIT_TYPES[u.type].aircraft);
+    } else {
+      // Skip off-map units (aircraft/naval) for non-air phases
+      available = state.units.filter(u => !u.destroyed && u.placed && u.side === state.activeSide && !u.fired && !u.moved && u.col !== -1);
+    }
     if (available.length > 0) {
-      const phaseLabel = state.phase === PHASE_COMBAT ? 'Combat' : state.phase === PHASE_CLOSE_ASSAULT ? 'Close Assault' : 'Movement';
+      const phaseLabel = state.phase === PHASE_COMBAT ? 'Combat' : state.phase === PHASE_AIR ? 'Air' : state.phase === PHASE_CLOSE_ASSAULT ? 'Close Assault' : 'Movement';
       showConfirmModal(
         `End ${phaseLabel} Phase?`,
         `${available.length} unit(s) have not acted this phase.`,
@@ -3765,10 +3817,17 @@ document.getElementById('btn-rules').addEventListener('click', toggleRulesPanel)
 document.getElementById('btn-rules-close').addEventListener('click', toggleRulesPanel);
 
 function selectNextUnit() {
-  const available = state.units.filter(u =>
-    !u.destroyed && u.placed && u.side === state.activeSide &&
-    !u.fired && !u.moved
-  );
+  const isAirPhase = state.phase === PHASE_AIR;
+  const available = state.units.filter(u => {
+    if (u.destroyed || !u.placed || u.side !== state.activeSide) return false;
+    if (u.fired || u.moved) return false;
+    const ut = UNIT_TYPES[u.type];
+    // During Air Phase, only cycle through aircraft
+    if (isAirPhase) return !!ut.aircraft;
+    // During other phases, skip off-map units (aircraft/naval)
+    if (u.col === -1 && u.row === -1) return false;
+    return true;
+  });
   if (available.length === 0) return;
   const sel = getSelectedUnit();
   if (!sel) {
@@ -3914,12 +3973,18 @@ function updateUI() {
     phaseText = sideLabel(state.activeSide) + ' Reinforcement Phase';
   } else {
     phaseText = sideLabel(state.activeSide) + ' ' +
-      (state.phase === PHASE_COMBAT ? 'Combat' : state.phase === PHASE_CLOSE_ASSAULT ? 'Close Assault' : 'Movement') + ' Phase';
+      (state.phase === PHASE_COMBAT ? 'Combat' : state.phase === PHASE_AIR ? 'Air' : state.phase === PHASE_CLOSE_ASSAULT ? 'Close Assault' : 'Movement') + ' Phase';
   }
   // Add units-remaining counter for combat/movement phases
   if (!isPlacing) {
-    const total = state.units.filter(u => !u.destroyed && u.placed && u.side === state.activeSide).length;
-    const acted = state.units.filter(u => !u.destroyed && u.placed && u.side === state.activeSide && (u.fired || u.moved)).length;
+    let total, acted;
+    if (state.phase === PHASE_AIR) {
+      total = state.units.filter(u => !u.destroyed && u.placed && u.side === state.activeSide && UNIT_TYPES[u.type].aircraft).length;
+      acted = state.units.filter(u => !u.destroyed && u.placed && u.side === state.activeSide && UNIT_TYPES[u.type].aircraft && u.fired).length;
+    } else {
+      total = state.units.filter(u => !u.destroyed && u.placed && u.side === state.activeSide && u.col !== -1).length;
+      acted = state.units.filter(u => !u.destroyed && u.placed && u.side === state.activeSide && u.col !== -1 && (u.fired || u.moved)).length;
+    }
     phaseText += ` (${acted}/${total} acted)`;
   }
   phaseEl.textContent = phaseText;
@@ -3934,21 +3999,23 @@ function updateUI() {
     showRackUnitInfo(entry.type, entry.side);
   } else if (sel) {
     const utype = UNIT_TYPES[sel.type];
-    const terrainMod = TERRAIN_INFO[state.map[sel.col][sel.row]].dfMod;
-    const terrainName = TERRAIN_INFO[state.map[sel.col][sel.row]].name;
+    const isOffMap = sel.col === -1 && sel.row === -1;
+    const terrainMod = isOffMap ? 1 : TERRAIN_INFO[state.map[sel.col][sel.row]].dfMod;
+    const terrainName = isOffMap ? 'Off-Map' : TERRAIN_INFO[state.map[sel.col][sel.row]].name;
+    const posLabel = isOffMap ? 'Off-Map' : `(${sel.col},${sel.row})`;
     detailsEl.innerHTML = `
       <div class="unit-name-display ${sel.side === ALLIED ? 'allied-unit' : 'german-unit'}">
         ${utype.name}
       </div>
       <div class="stat-grid">
         <span class="stat-label">Side:</span><span class="stat-value">${sideLabel(sel.side)}</span>
-        <span class="stat-label">Class:</span><span class="stat-value">${utype.class}${utype.armored ? ' [A]' : ''}</span>
+        <span class="stat-label">Class:</span><span class="stat-value">${utype.class}${utype.armored ? ' [A]' : ''}${utype.aircraft ? ' [AIR]' : ''}${utype.naval ? ' [NAVAL]' : ''}</span>
         <span class="stat-label">AT Factor:</span><span class="stat-value">${utype.at}</span>
         <span class="stat-label">AP Factor:</span><span class="stat-value">${utype.ap}</span>
-        <span class="stat-label">DF Factor:</span><span class="stat-value">${utype.df} (×${terrainMod} ${terrainName})</span>
-        <span class="stat-label">Range:</span><span class="stat-value">${utype.range}</span>
-        <span class="stat-label">MP:</span><span class="stat-value">${utype.mp}</span>
-        <span class="stat-label">Position:</span><span class="stat-value">(${sel.col},${sel.row})</span>
+        ${!isOffMap ? `<span class="stat-label">DF Factor:</span><span class="stat-value">${utype.df} (×${terrainMod} ${terrainName})</span>` : ''}
+        <span class="stat-label">Range:</span><span class="stat-value">${utype.range === 99 ? 'Any' : utype.range}</span>
+        ${!utype.aircraft && !utype.naval ? `<span class="stat-label">MP:</span><span class="stat-value">${utype.mp}</span>` : ''}
+        <span class="stat-label">Position:</span><span class="stat-value">${posLabel}</span>
         <span class="stat-label">Status:</span><span class="stat-value">${sel.dispersed ? 'DISPERSED' : ''}${sel.fired ? ' FIRED' : sel.moved ? ' MOVED' : sel.dispersed ? '' : 'Ready'}${sel.loadedOnto ? ' [LOADED]' : ''}</span>
         ${utype.transport ? `<span class="stat-label">Cargo:</span><span class="stat-value">${sel.passengers.length > 0 ? sel.passengers.map(pid => { const p = state.units.find(u => u.id === pid); return p ? UNIT_TYPES[p.type].name : '?'; }).join(', ') : 'Empty'}</span>` : ''}
       </div>
@@ -4000,11 +4067,25 @@ function updateUI() {
       btnUnload.className = 'hidden';
     }
 
-    const canFireNormal = sel && sel.side === state.activeSide && state.phase === PHASE_COMBAT && !sel.fired && !sel.moved;
+    const canFireNormal = sel && sel.side === state.activeSide && state.phase === PHASE_COMBAT && !sel.fired && !sel.moved && !UNIT_TYPES[sel.type].aircraft;
     const canFireCAT = sel && sel.side === state.activeSide && state.phase === PHASE_CLOSE_ASSAULT && !sel.fired && UNIT_TYPES[sel.type].class === INF;
-    const canFire = canFireNormal || canFireCAT;
-    const canMove = sel && sel.side === state.activeSide && state.phase === PHASE_MOVEMENT && !sel.moved && !sel.fired;
-    const hasAvailable = state.units.some(u => !u.destroyed && u.placed && u.side === state.activeSide && !u.fired && !u.moved);
+    const canFireAir = sel && sel.side === state.activeSide && state.phase === PHASE_AIR && !sel.fired && UNIT_TYPES[sel.type].aircraft;
+    const canFire = canFireNormal || canFireCAT || canFireAir;
+    const canMove = sel && sel.side === state.activeSide && state.phase === PHASE_MOVEMENT && !sel.moved && !sel.fired && sel.col !== -1;
+    const isAirPhase = state.phase === PHASE_AIR;
+    // During Air Phase, hide Move button; also count only aircraft as available
+    if (isAirPhase) {
+      btnMove.className = 'hidden';
+      btnLoad.className = 'hidden';
+      btnUnload.className = 'hidden';
+    }
+    const hasAvailable = state.units.some(u => {
+      if (u.destroyed || !u.placed || u.side !== state.activeSide) return false;
+      if (u.fired || u.moved) return false;
+      if (isAirPhase) return !!UNIT_TYPES[u.type].aircraft;
+      if (u.col === -1) return false;
+      return true;
+    });
 
     btnFire.disabled = !canFire;
     btnMove.disabled = !canMove;
