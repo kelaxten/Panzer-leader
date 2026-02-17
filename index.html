@@ -933,6 +933,8 @@ let state = {
   pendingFire: null,        // { attacker, targetCol, targetRow } awaiting confirmation
   ifOrders: [],             // queued indirect fire orders: { attackerId, targetCol, targetRow, side, turnOrdered }
   wrecks: [],               // wreck markers: { col, row, name }
+  replayLog: [],            // structured action log for turn replay: { action, ... }
+  replayActive: false,      // true when replay animation is playing
 };
 
 let nextUnitId = 1;
@@ -2112,7 +2114,36 @@ function render() {
   drawOverlays();
   drawWrecks();
   drawUnits();
+  drawReplayHighlight();
   requestAnimationFrame(render);
+}
+
+function drawReplayHighlight() {
+  if (!state.replayHighlight) return;
+  const h = state.replayHighlight;
+  if (Date.now() > h.endTime) {
+    state.replayHighlight = null;
+    return;
+  }
+  const { x, y } = hexToPixel(h.col, h.row);
+  // Pulsing highlight
+  const t = (h.endTime - Date.now()) / 800;
+  const alpha = 0.2 + 0.4 * t;
+  ctx.fillStyle = h.color.replace(/[\d.]+\)$/, alpha + ')');
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const angle = Math.PI / 3 * i - Math.PI / 6;
+    const px = x + HEX_SIZE * Math.cos(angle);
+    const py = y + HEX_SIZE * Math.sin(angle);
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+  // Thick border
+  ctx.strokeStyle = h.color.replace(/[\d.]+\)$/, '0.8)');
+  ctx.lineWidth = 3;
+  ctx.stroke();
 }
 
 // ═══════════════════════════════════════════
@@ -2294,6 +2325,7 @@ function enterFireMode() {
 }
 
 function executeMove(unit, destCol, destRow) {
+  const fromCol = unit.col, fromRow = unit.row;
   const from = `(${unit.col},${unit.row})`;
   unit.col = destCol;
   unit.row = destRow;
@@ -2301,6 +2333,7 @@ function executeMove(unit, destCol, destRow) {
   state.moveMode = false;
   state.reachableHexes = null;
   addLog(`${UNIT_TYPES[unit.type].name} moves from ${from} to (${destCol},${destRow})`, 'log-move');
+  state.replayLog.push({ action: 'move', unitName: UNIT_TYPES[unit.type].name, fromCol, fromRow, toCol: destCol, toRow: destRow });
   // Move passengers with carrier
   if (unit.passengers && unit.passengers.length > 0) {
     for (const pid of unit.passengers) {
@@ -2428,6 +2461,7 @@ function executeOverrun(attacker, targetCol, targetRow) {
     `${atype.name} OVERRUN from ${from} into (${targetCol},${targetRow}) vs ${dtype.name} — ${attackFactor} vs ${defenseFactor} — ${crtCol} odds (+1 col shift) — die:${dieDisplay}-2 → ${result}`,
     'log-combat'
   );
+  state.replayLog.push({ action: 'overrun', unitName: atype.name, targetName: dtype.name, fromCol: attacker.col, fromRow: attacker.row, toCol: targetCol, toRow: targetRow, result, odds: crtCol });
 
   // Apply result
   applyCombatResult(result, attacker, defender);
@@ -2616,6 +2650,7 @@ function executeFire(attacker, targetCol, targetRow) {
     });
 
     addLog(`${atype.name} plots indirect fire at (${targetCol},${targetRow}) — will resolve next turn`, 'log-combat');
+    state.replayLog.push({ action: 'if_order', unitName: atype.name, fromCol: attacker.col, fromRow: attacker.row, toCol: targetCol, toRow: targetRow });
     showToast('IF order queued — resolves next combat phase');
     updateUI();
     return;
@@ -2668,6 +2703,8 @@ function executeFire(attacker, targetCol, targetRow) {
       'log-combat'
     );
 
+    state.replayLog.push({ action: 'air_attack', unitName: atype.name, toCol: targetCol, toRow: targetRow, result, shotDown: false });
+
     // For air attacks, attacker results (AE/AR) are ignored — aircraft leaves after attacking
     if (result === 'AE' || result === 'AR') {
       addLog(`  ${atype.name} attack result ${result} — aircraft returns to base unscathed`, 'log-result');
@@ -2697,6 +2734,7 @@ function executeFire(attacker, targetCol, targetRow) {
     `${preview.atype.name} fires at ${preview.dtype.name}${observeLog} — ${preview.attackFactor} vs ${preview.dtype.df}x${preview.terrainMod}(${preview.terrainName})=${preview.defenseFactor} — ${preview.crtCol} odds — die:${dieDisplay}${engBonus} → ${result}`,
     'log-combat'
   );
+  state.replayLog.push({ action: 'fire', unitName: preview.atype.name, targetName: preview.dtype.name, fromCol: attacker.col, fromRow: attacker.row, toCol: targetCol, toRow: targetRow, result, odds: preview.crtCol });
 
   applyCombatResult(result, attacker, preview.defender);
   updateUI();
@@ -3245,7 +3283,7 @@ function buildTurnSummary() {
   };
 }
 
-function showTurnSummary(summary) {
+function showTurnSummary(summary, replayLog) {
   const modal = document.getElementById('summary-modal');
   const title = document.getElementById('summary-title');
   const content = document.getElementById('summary-content');
@@ -3253,6 +3291,11 @@ function showTurnSummary(summary) {
   title.textContent = `Turn ${summary.turn} Summary`;
 
   let html = '';
+
+  // Replay button if actions were recorded
+  if (replayLog && replayLog.length > 0) {
+    html += `<div style="text-align:center;margin-bottom:10px;"><button id="btn-replay" style="padding:8px 16px;background:#4a6a3a;color:#dfd;border:1px solid #6a8a5a;font-family:Courier New;font-size:13px;cursor:pointer;">Replay ${replayLog.length} Action(s)</button></div>`;
+  }
 
   // Casualties section
   html += '<div class="summary-section">';
@@ -3283,6 +3326,69 @@ function showTurnSummary(summary) {
 
   content.innerHTML = html;
   modal.classList.add('visible');
+
+  // Bind replay button if present
+  const replayBtn = document.getElementById('btn-replay');
+  if (replayBtn && replayLog && replayLog.length > 0) {
+    replayBtn.addEventListener('click', () => {
+      modal.classList.remove('visible');
+      playTurnReplay(replayLog);
+    });
+  }
+}
+
+// ── Turn Replay Animation ──
+function playTurnReplay(replayLog) {
+  if (!replayLog || replayLog.length === 0) return;
+  state.replayActive = true;
+  state.replayHighlight = null; // { col, row, color, endTime }
+
+  let idx = 0;
+  const delay = 800; // ms between actions
+
+  function playNext() {
+    if (idx >= replayLog.length) {
+      state.replayActive = false;
+      state.replayHighlight = null;
+      showToast('Replay complete');
+      return;
+    }
+
+    const entry = replayLog[idx];
+    idx++;
+
+    switch (entry.action) {
+      case 'move':
+        // Highlight destination hex in blue
+        state.replayHighlight = { col: entry.toCol, row: entry.toRow, color: 'rgba(100,150,255,0.4)', endTime: Date.now() + delay };
+        addLog(`[REPLAY] ${entry.unitName} moved to (${entry.toCol},${entry.toRow})`, 'log-move');
+        break;
+      case 'fire':
+        // Highlight target hex in red
+        state.replayHighlight = { col: entry.toCol, row: entry.toRow, color: 'rgba(255,100,80,0.4)', endTime: Date.now() + delay };
+        addLog(`[REPLAY] ${entry.unitName} fired at ${entry.targetName} — ${entry.odds} → ${entry.result}`, 'log-combat');
+        break;
+      case 'overrun':
+        state.replayHighlight = { col: entry.toCol, row: entry.toRow, color: 'rgba(255,150,50,0.4)', endTime: Date.now() + delay };
+        addLog(`[REPLAY] ${entry.unitName} overrun at (${entry.toCol},${entry.toRow}) vs ${entry.targetName} → ${entry.result}`, 'log-combat');
+        break;
+      case 'air_attack':
+        state.replayHighlight = { col: entry.toCol, row: entry.toRow, color: 'rgba(200,200,255,0.4)', endTime: Date.now() + delay };
+        addLog(`[REPLAY] ${entry.unitName} air attack at (${entry.toCol},${entry.toRow}) → ${entry.result}`, 'log-combat');
+        break;
+      case 'if_order':
+        state.replayHighlight = { col: entry.toCol, row: entry.toRow, color: 'rgba(200,150,100,0.4)', endTime: Date.now() + delay };
+        addLog(`[REPLAY] ${entry.unitName} plotted indirect fire at (${entry.toCol},${entry.toRow})`, 'log-combat');
+        break;
+      default:
+        break;
+    }
+
+    setTimeout(playNext, delay);
+  }
+
+  addLog('── Replaying opponent actions ──', 'log-phase');
+  playNext();
 }
 
 function exportGameState() {
@@ -3312,7 +3418,9 @@ function exportGameState() {
     ifOrders: state.ifOrders,
     wrecks: state.wrecks,
     turnSummary: turnSummary,
+    replayLog: state.replayLog,
   };
+  state.replayLog = []; // Clear after exporting
   const json = JSON.stringify(data);
   const encoded = btoa(unescape(encodeURIComponent(json)));
   const safeName = (state.scenarioName || 'game').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
@@ -3369,6 +3477,7 @@ function buildSharePayload() {
     germanLosses: state.germanLosses,
     ifOrders: state.ifOrders,
     wrecks: state.wrecks,
+    replayLog: state.replayLog,
   };
 }
 
@@ -3406,6 +3515,11 @@ function importGameState(encoded) {
   state.selectedRackIndex = -1;
   state.hoverHex = null;
   state.mouseHex = null;
+  state.replayLog = []; // Fresh log for this player's segment
+  state.replayActive = false;
+
+  // Store imported replay log for replay animation
+  const importedReplayLog = data.replayLog || [];
 
   // Restore victory state
   state.victoryConditions = data.victoryConditions || null;
@@ -3421,9 +3535,9 @@ function importGameState(encoded) {
   resizeCanvas();
   updateUI();
 
-  // Show turn summary if available
+  // Show turn summary with replay option if actions were recorded
   if (data.turnSummary) {
-    showTurnSummary(data.turnSummary);
+    showTurnSummary(data.turnSummary, importedReplayLog);
   }
 }
 
