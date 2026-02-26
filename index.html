@@ -638,7 +638,16 @@ canvas { display: block; cursor: crosshair; flex: 1; }
       <tr><td>Beach</td><td>1</td><td>2</td><td>&times;1</td><td>No</td></tr>
       <tr><td>Bluff</td><td>3</td><td>&#8734;</td><td>&times;2</td><td>Yes</td></tr>
       <tr><td>Fortification</td><td>1</td><td>&#8734;</td><td>&times;3</td><td>Yes</td></tr>
+      <tr><td>Minefield</td><td>1</td><td>1</td><td>&times;1</td><td>No</td></tr>
+      <tr><td>Wire</td><td>halt</td><td>1</td><td>&times;1</td><td>No</td></tr>
+      <tr><td>Trench</td><td>1</td><td>&#8734;</td><td>&times;3</td><td>No</td></tr>
     </table>
+    <p style="font-size:11px;color:#888;margin-top:4px;">
+      <b>Minefield:</b> Entering unit attacked at 2:1 CRT. Cleared after triggering.<br>
+      <b>Wire:</b> Infantry halts on entry (cannot continue). Vehicles pass freely.<br>
+      <b>Trench:</b> Infantry only. &times;3 defense bonus. Vehicles cannot enter.<br>
+      <b>DD Tank:</b> Swamping roll on beach entry: 1-2 on d6 = sunk.
+    </p>
 
     <h3>Unit Stats</h3>
     <ul>
@@ -730,7 +739,7 @@ const STACK_LIMIT = 4;
 // Terrain types
 const T = {
   CLEAR: 0, WOODS: 1, TOWN: 2, HILL: 3, ROAD: 4, BOCAGE: 5,
-  BEACH: 6, BLUFF: 7, FORTIFICATION: 8
+  BEACH: 6, BLUFF: 7, FORTIFICATION: 8, MINEFIELD: 9, WIRE: 10, TRENCH: 11
 };
 
 const TERRAIN_INFO = {
@@ -743,6 +752,9 @@ const TERRAIN_INFO = {
   [T.BEACH]:  { name: 'Beach',  moveCostInf: 1, moveCostVeh: 2, dfMod: 1, blockLOS: false, color: '#c8b878' },
   [T.BLUFF]:  { name: 'Bluff',  moveCostInf: 3, moveCostVeh: 99, dfMod: 2, blockLOS: true, color: '#6a6a4a' },
   [T.FORTIFICATION]: { name: 'Fortification', moveCostInf: 1, moveCostVeh: 99, dfMod: 3, blockLOS: true, color: '#555555' },
+  [T.MINEFIELD]: { name: 'Minefield', moveCostInf: 1, moveCostVeh: 1, dfMod: 1, blockLOS: false, color: '#7a5a3a' },
+  [T.WIRE]:      { name: 'Wire',      moveCostInf: 1, moveCostVeh: 1, dfMod: 1, blockLOS: false, color: '#8a7a5a', wire: true },
+  [T.TRENCH]:    { name: 'Trench',    moveCostInf: 1, moveCostVeh: 99, dfMod: 3, blockLOS: false, color: '#5a5a3a' },
 };
 
 // Sides
@@ -1241,6 +1253,38 @@ function generateOmahaMap() {
     }
   }
 
+  // Minefields — scattered across upper beach (row 15-16)
+  const minefields = [
+    [2,15],[5,15],[8,15],[12,15],[15,15],[18,15],[21,15],[24,15],[27,15],
+    [4,16],[9,16],[14,16],[19,16],[25,16],
+  ];
+  for (const [c, r] of minefields) {
+    if (map[c][r] === T.BEACH) map[c][r] = T.MINEFIELD;
+  }
+
+  // Wire obstacles — shingle line (row 14, between beach and bluffs)
+  const wire = [
+    [1,14],[3,14],[5,14],[7,14],[9,14],[11,14],[13,14],[15,14],[17,14],[19,14],[21,14],[23,14],[25,14],[27,14],[29,14],
+  ];
+  for (const [c, r] of wire) {
+    if (map[c][r] === T.BLUFF) map[c][r] = T.WIRE;
+  }
+
+  // Trenches — German defensive positions behind bluffs (rows 10-11)
+  const trenches = [
+    [3,10],[4,10],[5,10],   // Vierville WN
+    [7,10],[8,10],          // Dog White WN
+    [10,10],[11,10],        // Les Moulins WN
+    [15,10],[16,10],[17,10],// St-Laurent WN
+    [22,10],[23,10],[24,10],// Colleville WN
+    [26,10],[27,10],        // East Colleville WN
+  ];
+  for (const [c, r] of trenches) {
+    if (map[c][r] !== T.ROAD && map[c][r] !== T.FORTIFICATION) {
+      map[c][r] = T.TRENCH;
+    }
+  }
+
   return map;
 }
 
@@ -1534,7 +1578,8 @@ function findReachable(unit) {
     const neighbors = hexNeighbors(cur.col, cur.row);
     for (const n of neighbors) {
       const terrain = state.map[n.col][n.row];
-      let cost = isVehicle ? TERRAIN_INFO[terrain].moveCostVeh : TERRAIN_INFO[terrain].moveCostInf;
+      const tinfo = TERRAIN_INFO[terrain];
+      let cost = isVehicle ? tinfo.moveCostVeh : tinfo.moveCostInf;
       // Wrecks add +1 MP cost for vehicles
       if (isVehicle && state.wrecks.some(w => w.col === n.col && w.row === n.row)) {
         cost += 1;
@@ -1560,6 +1605,8 @@ function findReachable(unit) {
       const existing = reachable.get(nk);
       if (existing && existing.mp >= remaining) continue;
       reachable.set(nk, { mp: remaining, overrun: false });
+      // Wire halts infantry: they can enter but cannot continue moving from wire hex
+      if (tinfo.wire && !isVehicle) continue;
       queue.push({ col: n.col, row: n.row, mp: remaining });
     }
   }
@@ -1720,6 +1767,45 @@ function drawMap() {
         ctx.strokeStyle = '#444';
         ctx.lineWidth = 1;
         ctx.strokeRect(x - 7, y - 4, 14, 8);
+      }
+      if (terrain === T.MINEFIELD) {
+        // Skull/danger symbol — red X with dots
+        ctx.strokeStyle = '#c44';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x - 5, y - 5); ctx.lineTo(x + 5, y + 5);
+        ctx.moveTo(x + 5, y - 5); ctx.lineTo(x - 5, y + 5);
+        ctx.stroke();
+        ctx.fillStyle = '#c44';
+        ctx.beginPath(); ctx.arc(x, y - 7, 1.5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(x, y + 7, 1.5, 0, Math.PI * 2); ctx.fill();
+      }
+      if (terrain === T.WIRE) {
+        // Barbed wire — zigzag lines
+        ctx.strokeStyle = '#888';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x - 10, y);
+        for (let w = -8; w <= 10; w += 4) {
+          ctx.lineTo(x + w, y + (w % 8 === 0 ? -4 : 4));
+        }
+        ctx.stroke();
+        // Small barbs
+        ctx.fillStyle = '#888';
+        for (let w = -6; w <= 6; w += 6) {
+          ctx.beginPath(); ctx.arc(x + w, y + (w % 12 === 0 ? -3 : 3), 1, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+      if (terrain === T.TRENCH) {
+        // Trench — parallel lines with fill
+        ctx.strokeStyle = '#4a4a2a';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x - 9, y - 2); ctx.lineTo(x + 9, y - 2);
+        ctx.moveTo(x - 9, y + 2); ctx.lineTo(x + 9, y + 2);
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(60,50,30,0.4)';
+        ctx.fillRect(x - 9, y - 2, 18, 4);
       }
     }
   }
@@ -2345,6 +2431,47 @@ function executeMove(unit, destCol, destRow) {
       }
     }
   }
+  // DD tank swamping: DD Sherman entering beach from deep water (row 17+) risks sinking
+  if (unit.type === 'us_dd_tank' && fromRow >= 17 && destRow <= 16 && !unit.destroyed) {
+    const swampRoll = Math.floor(Math.random() * 6) + 1;
+    if (swampRoll <= 2) {
+      unit.destroyed = true;
+      addLog(`  DD Sherman swamped entering beach — roll:${swampRoll} → SUNK!`, 'log-combat');
+      state.replayLog.push({ action: 'fire', unitName: 'Sea', targetName: 'DD Sherman', fromCol: destCol, fromRow: destRow, toCol: destCol, toRow: destRow, result: 'DE', odds: 'swamp' });
+      updateSpotting();
+      updateUI();
+      return;
+    } else {
+      addLog(`  DD Sherman reaches beach safely — roll:${swampRoll}`, 'log-move');
+    }
+  }
+
+  // Minefield attack: entering a minefield hex triggers 2:1 CRT attack
+  if (state.map[destCol] && state.map[destCol][destRow] === T.MINEFIELD && !unit.destroyed) {
+    const mineRoll = Math.floor(Math.random() * 6);
+    const mineResult = CRT['2:1'][mineRoll];
+    const mineDie = mineRoll + 1;
+    addLog(`  MINEFIELD at (${destCol},${destRow})! ${UNIT_TYPES[unit.type].name} — 2:1 odds — die:${mineDie} → ${mineResult}`, 'log-combat');
+    state.replayLog.push({ action: 'fire', unitName: 'Minefield', targetName: UNIT_TYPES[unit.type].name, fromCol: destCol, fromRow: destRow, toCol: destCol, toRow: destRow, result: mineResult, odds: '2:1' });
+    if (mineResult === 'DE' || mineResult === 'EX') {
+      unit.destroyed = true;
+      addLog(`  ${UNIT_TYPES[unit.type].name} destroyed by minefield!`, 'log-result');
+      // Destroy passengers too
+      if (unit.passengers) {
+        for (const pid of unit.passengers) {
+          const p = state.units.find(u => u.id === pid);
+          if (p && !p.destroyed) { p.destroyed = true; }
+        }
+      }
+    } else if (mineResult === 'DR') {
+      unit.dispersed = true;
+      addLog(`  ${UNIT_TYPES[unit.type].name} dispersed by minefield`, 'log-result');
+    }
+    // Minefield is cleared after triggering
+    state.map[destCol][destRow] = T.CLEAR;
+    addLog(`  Minefield at (${destCol},${destRow}) cleared`, 'log-result');
+  }
+
   updateSpotting();
   updateUI();
 }
@@ -3845,7 +3972,8 @@ document.addEventListener('keydown', (e) => {
         returnUnitToRack(sel);
       }
     }
-  } else if (e.key === 'Enter') {
+  } else if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
     advancePhase();
   } else if (e.key === 'n' || e.key === 'N') {
     if (isPlacing) {
