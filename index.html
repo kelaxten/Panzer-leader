@@ -521,14 +521,19 @@ canvas { display: block; cursor: crosshair; flex: 1; }
   <div class="subtitle">Tactical Wargame &mdash; Select Scenario</div>
   <div id="scenario-cards">
     <div class="scenario-card" id="card-cobra">
-      <h2>Cobra Engagement</h2>
-      <div class="sc-desc">A combined-arms engagement in the Norman bocage. US armor and infantry push through hedgerow country against dug-in German Panzer and infantry forces.</div>
-      <div class="sc-meta">24&times;18 hex map &middot; ~12 units per side &middot; Reinforcements turn 2-3</div>
+      <h2>Operation Cobra &mdash; Bocage Breakout</h2>
+      <div class="sc-desc">July 25, 1944. A combined-arms American task force must smash through the Panzer Lehr Division's bocage defenses and exit 8 units off the southern map edge to achieve breakout.</div>
+      <div class="sc-meta">24&times;18 hex map &middot; 16 turns &middot; 37 US vs 25 German units &middot; P-47 air support turn 2</div>
     </div>
     <div class="scenario-card" id="card-omaha">
       <h2>Omaha Beach &mdash; D-Day</h2>
-      <div class="sc-desc">June 6, 1944. The US 1st and 29th Infantry Divisions assault the fortified bluffs of Omaha Beach against the German 352nd Infantry Division. Storm the beaches and break through the Atlantic Wall.</div>
-      <div class="sc-meta">30&times;20 hex map &middot; ~35 German / 13+ US first wave &middot; Reinforcement waves turns 2-4</div>
+      <div class="sc-desc">June 6, 1944, 0630 hours. The US 1st and 29th Infantry Divisions assault the fortified bluffs of Omaha Beach against the German 352nd Infantry Division. Secure 2 of 3 draw exits to establish the beachhead.</div>
+      <div class="sc-meta">30&times;20 hex map &middot; 20 turns &middot; 3 assault waves &middot; DD tanks, naval &amp; air support</div>
+    </div>
+    <div class="scenario-card" id="card-gold">
+      <h2>Gold Beach &mdash; British Assault</h2>
+      <div class="sc-desc">June 6, 1944. The British 50th Division and 8th Armoured Brigade assault Gold Beach with DD tanks, AVREs, and Commandos. Clear the WN strongpoints and push inland to Cr&eacute;pon.</div>
+      <div class="sc-meta">28&times;16 hex map &middot; 16 turns &middot; 3 assault waves &middot; Hobart's Funnies, Typhoon air support</div>
     </div>
     <div class="scenario-card" id="card-resume">
       <h2>Resume Game</h2>
@@ -569,6 +574,7 @@ canvas { display: block; cursor: crosshair; flex: 1; }
     <button id="btn-move" disabled>Enter Move Mode [M]</button>
     <button id="btn-load" class="hidden" disabled>Load onto Transport [L]</button>
     <button id="btn-unload" class="hidden" disabled>Unload Passenger [U]</button>
+    <button id="btn-exit-map" class="hidden" disabled>Exit Map South [X]</button>
     <button id="btn-return" disabled>Return to Rack [R]</button>
     <button id="btn-next-unit" disabled>Next Unit [N]</button>
     <button id="btn-end-phase">Done Placing [Enter]</button>
@@ -908,6 +914,8 @@ const UNIT_TYPES = {
   'us_engineer':    { name: 'Engineers',      class: INF,    armored: false, mp: 4,  at: 2,  ap: 5,  df: 4,  range: 1,  symbol: 'X', side: ALLIED, engineer: true },
   'us_mg':          { name: '.30 Cal MG',     class: INF,    armored: false, mp: 2,  at: 0,  ap: 6,  df: 2,  range: 4,  symbol: '.', side: ALLIED },
   'us_bazooka':     { name: 'Bazooka Team',   class: INF,    armored: false, mp: 4,  at: 4,  ap: 1,  df: 1,  range: 2,  symbol: '|', side: ALLIED },
+  'us_fo':          { name: 'Fwd Observer',   class: INF,    armored: false, mp: 4,  at: 0,  ap: 1,  df: 1,  range: 8,  symbol: 'O', side: ALLIED },
+  'us_m4_dozer':    { name: 'M4 Dozer',       class: ARM,    armored: true,  mp: 10, at: 8,  ap: 6,  df: 8,  range: 6,  symbol: 'X', side: ALLIED, engineer: true },
   // ── American Omaha-specific ──
   'us_116_inf':     { name: '116th Inf',      class: INF,    armored: false, mp: 4,  at: 1,  ap: 4,  df: 4,  range: 1,  symbol: 'X', side: ALLIED },
   'us_16_inf':      { name: '16th Inf',       class: INF,    armored: false, mp: 4,  at: 1,  ap: 4,  df: 4,  range: 1,  symbol: 'X', side: ALLIED },
@@ -916,7 +924,33 @@ const UNIT_TYPES = {
   'us_5ranger':     { name: '5th Rangers',    class: INF,    armored: false, mp: 4,  at: 2,  ap: 6,  df: 5,  range: 1,  symbol: 'X', side: ALLIED },
   'us_743_sherman': { name: '743rd Tank',     class: ARM,    armored: true,  mp: 8,  at: 8,  ap: 6,  df: 8,  range: 6,  symbol: 'X', side: ALLIED },
   'us_741_sherman': { name: '741st Tank',     class: ARM,    armored: true,  mp: 8,  at: 8,  ap: 6,  df: 6,  range: 6,  symbol: 'X', side: ALLIED },
-  'us_dd_tank':     { name: 'DD Sherman',     class: ARM,    armored: true,  mp: 10, at: 8,  ap: 6,  df: 6,  range: 6,  symbol: 'X', side: ALLIED },
+  'us_dd_tank':     { name: 'DD Sherman',     class: ARM,    armored: true,  mp: 10, at: 8,  ap: 6,  df: 6,  range: 6,  symbol: 'X', side: ALLIED, ddTank: true },
+
+  // ── British Tanks ──
+  'uk_churchill':    { name: 'Churchill VII',  class: ARM,    armored: true,  mp: 6,  at: 8,  ap: 6,  df: 16, range: 6,  symbol: 'X', side: ALLIED },
+  'uk_avre':         { name: 'AVRE',           class: ARM,    armored: true,  mp: 6,  at: 4,  ap: 12, df: 16, range: 2,  symbol: 'X', side: ALLIED, engineer: true },
+  'uk_firefly':      { name: 'Firefly',        class: ARM,    armored: true,  mp: 10, at: 16, ap: 4,  df: 8,  range: 10, symbol: 'X', side: ALLIED },
+  'uk_sherman_v':    { name: 'Sherman V',      class: ARM,    armored: true,  mp: 12, at: 8,  ap: 6,  df: 8,  range: 6,  symbol: 'X', side: ALLIED },
+  'uk_cromwell':     { name: 'Cromwell IV',    class: ARM,    armored: true,  mp: 14, at: 8,  ap: 6,  df: 6,  range: 6,  symbol: 'X', side: ALLIED },
+  'uk_dd_tank':      { name: 'DD Sherman',     class: ARM,    armored: true,  mp: 10, at: 8,  ap: 6,  df: 6,  range: 6,  symbol: 'X', side: ALLIED, ddTank: true },
+  // ── British SP Artillery ──
+  'uk_sexton':       { name: 'Sexton',         class: ART,    armored: true,  mp: 10, at: 2,  ap: 14, df: 4,  range: 20, symbol: 'O', side: ALLIED, indirect: true },
+  // ── British Vehicles ──
+  'uk_carrier':      { name: 'Bren Carrier',   class: MECH,   armored: true,  mp: 14, at: 0,  ap: 2,  df: 1,  range: 2,  symbol: 'X', side: ALLIED, transport: true },
+  // ── British Infantry ──
+  'uk_inf':          { name: 'Rifle Plt',      class: INF,    armored: false, mp: 4,  at: 1,  ap: 4,  df: 4,  range: 1,  symbol: 'X', side: ALLIED },
+  'uk_commando':     { name: 'RM Commando',    class: INF,    armored: false, mp: 4,  at: 2,  ap: 6,  df: 5,  range: 1,  symbol: 'X', side: ALLIED },
+  'uk_engineer':     { name: 'RE Engineers',   class: INF,    armored: false, mp: 4,  at: 2,  ap: 5,  df: 4,  range: 1,  symbol: 'X', side: ALLIED, engineer: true },
+  'uk_mg':           { name: 'Vickers MG',     class: INF,    armored: false, mp: 2,  at: 0,  ap: 6,  df: 2,  range: 4,  symbol: '.', side: ALLIED },
+  'uk_piat':         { name: 'PIAT Team',      class: INF,    armored: false, mp: 4,  at: 4,  ap: 1,  df: 1,  range: 1,  symbol: '|', side: ALLIED },
+  'uk_mortar':       { name: '3" Mortar',      class: INF,    armored: false, mp: 2,  at: 0,  ap: 6,  df: 1,  range: 8,  symbol: 'M', side: ALLIED, indirect: true },
+  'uk_6pdr':         { name: '6-pdr AT',       class: AT_GUN, armored: false, mp: 2,  at: 10, ap: 2,  df: 2,  range: 6,  symbol: '|', side: ALLIED },
+  'uk_fo':           { name: 'Fwd Observer',   class: INF,    armored: false, mp: 4,  at: 0,  ap: 1,  df: 1,  range: 8,  symbol: 'O', side: ALLIED },
+  // ── British Aircraft ──
+  'uk_typhoon':      { name: 'Typhoon',        class: AIR,    armored: false, mp: 0,  at: 10, ap: 14, df: 0,  range: 99, symbol: '^', side: ALLIED, aircraft: true },
+  // ── British Naval ──
+  'uk_dd_ship':      { name: 'Destroyer',      class: NAVAL,  armored: false, mp: 0,  at: 2,  ap: 16, df: 0,  range: 30, symbol: '~', side: ALLIED, indirect: true, naval: true },
+  'uk_cl_ship':      { name: 'HMS Ajax',       class: NAVAL,  armored: false, mp: 0,  at: 2,  ap: 20, df: 0,  range: 40, symbol: '~', side: ALLIED, indirect: true, naval: true },
 };
 
 // Combat Results Table
@@ -1009,48 +1043,100 @@ function generateTestMap() {
       map[c][r] = T.CLEAR;
     }
   }
-  // Roads running east-west
-  for (let c = 0; c < MAP_COLS; c++) { map[c][9] = T.ROAD; }
-  for (let c = 4; c < 14; c++) { map[c][5] = T.ROAD; }
-  // Road running north-south
-  for (let r = 0; r < MAP_ROWS; r++) { map[12][r] = T.ROAD; }
 
-  // Towns
-  const towns = [[12,9],[12,5],[13,9],[11,9],[6,5],[7,5],[18,3],[19,3],[4,14],[5,14],[10,13],[11,13]];
+  // Dense bocage belt in north (rows 0-5), thinning southward
+  const bocage = [
+    // Row 0 — near solid
+    [0,0],[1,0],[2,0],[3,0],[4,0],[5,0],
+    [7,0],[8,0],[9,0],[10,0],[11,0],
+    [13,0],[14,0],[15,0],[16,0],[17,0],
+    [19,0],[20,0],[21,0],[22,0],[23,0],
+    // Row 1
+    [0,1],[1,1],[2,1],[3,1],[4,1],[5,1],
+    [7,1],[8,1],[9,1],[11,1],
+    [13,1],[14,1],[15,1],[16,1],[17,1],
+    [19,1],[20,1],[21,1],[23,1],
+    // Row 2
+    [0,2],[1,2],[2,2],[4,2],[5,2],
+    [7,2],[8,2],[10,2],[11,2],
+    [13,2],[14,2],[16,2],[17,2],
+    [19,2],[20,2],[22,2],[23,2],
+    // Row 3
+    [0,3],[1,3],[3,3],[5,3],
+    [7,3],[8,3],[10,3],[11,3],
+    [13,3],[15,3],[17,3],
+    [19,3],[21,3],[23,3],
+    // Row 4 — moderate
+    [1,4],[2,4],[4,4],
+    [8,4],[9,4],
+    [14,4],[15,4],
+    [20,4],[21,4],
+    // Row 5 — sparse
+    [0,5],[1,5],
+    [9,5],[10,5],
+    [15,5],[16,5],
+    [22,5],[23,5],
+    // Row 6-7 — isolated patches
+    [2,6],[3,6],
+    [16,6],[17,6],
+    [1,7],[2,7],
+    [21,7],[22,7],
+    // A few remnants south of main road
+    [4,10],[5,10],
+    [19,11],[20,11],
+  ];
+  bocage.forEach(([c,r]) => { if (c < MAP_COLS && r < MAP_ROWS) map[c][r] = T.BOCAGE; });
+
+  // Roads — main E-W highway at row 9
+  for (let c = 0; c < MAP_COLS; c++) map[c][9] = T.ROAD;
+  // Central N-S highway (col 12)
+  for (let r = 0; r < MAP_ROWS; r++) map[12][r] = T.ROAD;
+  // West N-S road (col 6, from row 5 south)
+  for (let r = 5; r < MAP_ROWS; r++) map[6][r] = T.ROAD;
+  // East N-S road (col 18, from row 5 south)
+  for (let r = 5; r < MAP_ROWS; r++) map[18][r] = T.ROAD;
+
+  // Towns / villages
+  const towns = [
+    [11,9],[13,9],              // St-Gilles (flanking crossroads)
+    [6,9],[7,9],                // Western road junction
+    [18,9],[19,9],              // Eastern road junction
+    [6,13],[7,13],              // Marigny
+    [18,13],[19,13],            // La Chapelle-Enjuger
+    [12,15],[13,15],            // Canisy (near south exit)
+  ];
   towns.forEach(([c,r]) => { if (c < MAP_COLS && r < MAP_ROWS) map[c][r] = T.TOWN; });
 
   // Woods clusters
   const woods = [
-    [2,2],[3,2],[3,3],[2,3],
-    [7,1],[8,1],[8,2],[7,2],
-    [15,2],[16,2],[16,3],[15,3],[14,3],
-    [1,7],[2,7],[2,8],[1,8],[3,8],
-    [20,6],[21,6],[21,7],[20,7],[22,7],
-    [6,12],[7,12],[7,13],[6,13],
-    [17,11],[18,11],[18,12],[17,12],[19,12],
-    [3,16],[4,16],[4,17],[3,17],
-    [14,15],[15,15],[15,16],[14,16],
-    [22,14],[23,14],[22,15],[23,15],
+    [3,6],[4,6],[4,7],[3,7],    // West woods
+    [8,6],[9,6],[9,7],[8,7],    // Center-west woods
+    [14,7],[15,7],              // Center-east woods
+    [20,6],[21,6],[20,7],       // East woods
+    [2,11],[3,11],[3,12],       // SW woods
+    [9,12],[10,12],[10,13],     // Center-south woods
+    [14,12],[15,12],[15,13],    // Center-east-south woods
+    [21,12],[22,12],[22,13],    // SE woods
+    [3,16],[4,16],              // Far SW woods
+    [8,15],[9,15],              // South woods W
+    [20,15],[21,15],            // South woods E
   ];
   woods.forEach(([c,r]) => { if (c < MAP_COLS && r < MAP_ROWS) map[c][r] = T.WOODS; });
 
   // Hills
   const hills = [
-    [9,3],[10,3],[10,4],[9,4],
-    [19,8],[20,8],[20,9],[19,9],
-    [5,10],[6,10],[5,11],
-    [15,13],[16,13],[16,14],
+    [10,7],[11,7],[10,8],[11,8], // Central ridge
+    [3,10],[3,11],               // SW hills
+    [20,10],[21,10],             // SE hills
+    [15,11],[16,11],             // Center-east hills
+    [2,14],[3,14],               // Far SW hills
+    [22,14],[23,14],             // Far SE hills
   ];
   hills.forEach(([c,r]) => { if (c < MAP_COLS && r < MAP_ROWS) map[c][r] = T.HILL; });
 
-  // Bocage
-  const bocage = [
-    [0,5],[1,5],[0,6],[1,6],
-    [22,2],[23,2],[23,3],
-    [8,15],[9,15],[9,16],[8,16],
-    [20,13],[21,13],[21,14],
-  ];
-  bocage.forEach(([c,r]) => { if (c < MAP_COLS && r < MAP_ROWS) map[c][r] = T.BOCAGE; });
+  // German minefields blocking key approaches
+  map[11][8] = T.MINEFIELD;
+  map[17][8] = T.MINEFIELD;
 
   return map;
 }
@@ -1065,58 +1151,93 @@ function loadTestScenario() {
   state.activeSide = ALLIED;
   state.phase = PHASE_PLACEMENT;
 
-  // Build placement zones
+  // American placement zone: northern bocage (rows 0-5)
   const alliedZone = new Set();
-  for (let c = 0; c <= 7; c++) {
-    for (let r = 8; r <= 17; r++) {
+  for (let c = 0; c < 24; c++) {
+    for (let r = 0; r <= 5; r++) {
       alliedZone.add(hexKey(c, r));
     }
   }
+  // German placement zone: central/southern defense (rows 6-15)
   const germanZone = new Set();
-  for (let c = 16; c <= 23; c++) {
-    for (let r = 0; r <= 9; r++) {
+  for (let c = 0; c < 24; c++) {
+    for (let r = 6; r <= 15; r++) {
       germanZone.add(hexKey(c, r));
     }
   }
   state.placementZones = { [ALLIED]: alliedZone, [GERMAN]: germanZone };
   state.placementOrder = [ALLIED, GERMAN];
 
-  // Define initial units (availableTurn 0 = initial placement)
+  // ── Full OOB per ROADMAP: Operation Cobra, July 25 1944 ──
   const scenarioUnits = [
-    // Allied — initial
-    { type: 'us_sherman',   side: ALLIED, availableTurn: 0 },
-    { type: 'us_sherman',   side: ALLIED, availableTurn: 0 },
-    { type: 'us_76sherman', side: ALLIED, availableTurn: 0 },
-    { type: 'us_inf',       side: ALLIED, availableTurn: 0 },
-    { type: 'us_inf',       side: ALLIED, availableTurn: 0 },
-    { type: 'us_inf',       side: ALLIED, availableTurn: 0 },
-    { type: 'us_ranger',    side: ALLIED, availableTurn: 0 },
-    { type: 'us_mg',        side: ALLIED, availableTurn: 0 },
-    { type: 'us_57mm',      side: ALLIED, availableTurn: 0 },
-    { type: 'us_airborne',  side: ALLIED, availableTurn: 0 },
-    { type: 'us_mortar',    side: ALLIED, availableTurn: 0 },
-    { type: 'us_stuart',    side: ALLIED, availableTurn: 0 },
-    // Allied — reinforcements turn 3
-    { type: 'us_hellcat',   side: ALLIED, availableTurn: 3 },
-    { type: 'us_priest',    side: ALLIED, availableTurn: 3 },
-    { type: 'us_armored_inf', side: ALLIED, availableTurn: 3 },
-    // Allied — air support turn 2
-    { type: 'us_p47',       side: ALLIED, availableTurn: 2, offMap: true },
-    { type: 'us_p51',       side: ALLIED, availableTurn: 2, offMap: true },
-    // German — initial
-    { type: 'ge_panther',   side: GERMAN, availableTurn: 0 },
-    { type: 'ge_pzivh',     side: GERMAN, availableTurn: 0 },
-    { type: 'ge_stugiii',   side: GERMAN, availableTurn: 0 },
-    { type: 'ge_inf',       side: GERMAN, availableTurn: 0 },
-    { type: 'ge_inf',       side: GERMAN, availableTurn: 0 },
-    { type: 'ge_pzgren',    side: GERMAN, availableTurn: 0 },
-    { type: 'ge_pak40',     side: GERMAN, availableTurn: 0 },
-    { type: 'ge_mg',        side: GERMAN, availableTurn: 0 },
-    { type: 'ge_pzschreck', side: GERMAN, availableTurn: 0 },
-    // German — reinforcements turn 2
-    { type: 'ge_tiger',     side: GERMAN, availableTurn: 2 },
-    { type: 'ge_mortar',    side: GERMAN, availableTurn: 2 },
-    { type: 'ge_hetzer',    side: GERMAN, availableTurn: 2 },
+    // ── American (mixed armored + infantry task force) ──
+    { type: 'us_76sherman',   side: ALLIED, availableTurn: 0 },
+    { type: 'us_76sherman',   side: ALLIED, availableTurn: 0 },
+    { type: 'us_76sherman',   side: ALLIED, availableTurn: 0 },
+    { type: 'us_76sherman',   side: ALLIED, availableTurn: 0 },
+    { type: 'us_sherman',     side: ALLIED, availableTurn: 0 },
+    { type: 'us_sherman',     side: ALLIED, availableTurn: 0 },
+    { type: 'us_stuart',      side: ALLIED, availableTurn: 0 },
+    { type: 'us_stuart',      side: ALLIED, availableTurn: 0 },
+    { type: 'us_wolverine',   side: ALLIED, availableTurn: 0 },
+    { type: 'us_wolverine',   side: ALLIED, availableTurn: 0 },
+    { type: 'us_armored_inf', side: ALLIED, availableTurn: 0 },
+    { type: 'us_armored_inf', side: ALLIED, availableTurn: 0 },
+    { type: 'us_armored_inf', side: ALLIED, availableTurn: 0 },
+    { type: 'us_armored_inf', side: ALLIED, availableTurn: 0 },
+    { type: 'us_armored_inf', side: ALLIED, availableTurn: 0 },
+    { type: 'us_armored_inf', side: ALLIED, availableTurn: 0 },
+    { type: 'us_inf',         side: ALLIED, availableTurn: 0 },
+    { type: 'us_inf',         side: ALLIED, availableTurn: 0 },
+    { type: 'us_inf',         side: ALLIED, availableTurn: 0 },
+    { type: 'us_inf',         side: ALLIED, availableTurn: 0 },
+    { type: 'us_engineer',    side: ALLIED, availableTurn: 0 },
+    { type: 'us_engineer',    side: ALLIED, availableTurn: 0 },
+    { type: 'us_mg',          side: ALLIED, availableTurn: 0 },
+    { type: 'us_mg',          side: ALLIED, availableTurn: 0 },
+    { type: 'us_bazooka',     side: ALLIED, availableTurn: 0 },
+    { type: 'us_bazooka',     side: ALLIED, availableTurn: 0 },
+    { type: 'us_m3_ht',       side: ALLIED, availableTurn: 0 },
+    { type: 'us_m3_ht',       side: ALLIED, availableTurn: 0 },
+    { type: 'us_m3_ht',       side: ALLIED, availableTurn: 0 },
+    { type: 'us_m3_ht',       side: ALLIED, availableTurn: 0 },
+    { type: 'us_priest',      side: ALLIED, availableTurn: 0 },
+    { type: 'us_priest',      side: ALLIED, availableTurn: 0 },
+    { type: 'us_mortar',      side: ALLIED, availableTurn: 0 },
+    { type: 'us_mortar',      side: ALLIED, availableTurn: 0 },
+    { type: 'us_fo',          side: ALLIED, availableTurn: 0 },
+    { type: 'us_greyhound',   side: ALLIED, availableTurn: 0 },
+    { type: 'us_greyhound',   side: ALLIED, availableTurn: 0 },
+    // American air support (available turn 2, after carpet bombing)
+    { type: 'us_p47',         side: ALLIED, availableTurn: 2, offMap: true },
+    { type: 'us_p47',         side: ALLIED, availableTurn: 2, offMap: true },
+
+    // ── German (Panzer Lehr Division remnants + infantry) ──
+    { type: 'ge_pzivh',       side: GERMAN, availableTurn: 0 },
+    { type: 'ge_pzivh',       side: GERMAN, availableTurn: 0 },
+    { type: 'ge_pzivh',       side: GERMAN, availableTurn: 0 },
+    { type: 'ge_panther',     side: GERMAN, availableTurn: 0 },
+    { type: 'ge_stugiii',     side: GERMAN, availableTurn: 0 },
+    { type: 'ge_grenadier',   side: GERMAN, availableTurn: 0 },
+    { type: 'ge_grenadier',   side: GERMAN, availableTurn: 0 },
+    { type: 'ge_grenadier',   side: GERMAN, availableTurn: 0 },
+    { type: 'ge_grenadier',   side: GERMAN, availableTurn: 0 },
+    { type: 'ge_grenadier',   side: GERMAN, availableTurn: 0 },
+    { type: 'ge_grenadier',   side: GERMAN, availableTurn: 0 },
+    { type: 'ge_pioneer',     side: GERMAN, availableTurn: 0 },
+    { type: 'ge_pioneer',     side: GERMAN, availableTurn: 0 },
+    { type: 'ge_mg',          side: GERMAN, availableTurn: 0 },
+    { type: 'ge_mg',          side: GERMAN, availableTurn: 0 },
+    { type: 'ge_mg',          side: GERMAN, availableTurn: 0 },
+    { type: 'ge_pak40',       side: GERMAN, availableTurn: 0 },
+    { type: 'ge_pak40',       side: GERMAN, availableTurn: 0 },
+    { type: 'ge_mortar',      side: GERMAN, availableTurn: 0 },
+    { type: 'ge_mortar',      side: GERMAN, availableTurn: 0 },
+    { type: 'ge_lefh18',      side: GERMAN, availableTurn: 0 },
+    { type: 'ge_pzschreck',   side: GERMAN, availableTurn: 0 },
+    { type: 'ge_pzschreck',   side: GERMAN, availableTurn: 0 },
+    { type: 'ge_sdkfz251',    side: GERMAN, availableTurn: 0 },
+    { type: 'ge_sdkfz251',    side: GERMAN, availableTurn: 0 },
   ];
 
   // Separate into initial placement rack and reinforcements
@@ -1149,16 +1270,16 @@ function loadTestScenario() {
   state.alliedLosses = 0;
   state.germanLosses = 0;
   state.victoryConditions = {
-    turnLimit: 8,
+    turnLimit: 16,
     objectives: [
-      { name: 'Crossroads', hexes: ['12,9','13,9','11,9'], holder: null },
-      { name: 'North Road Jcn', hexes: ['6,5','7,5'], holder: null },
-      { name: 'East Village', hexes: ['18,3','19,3'], holder: null },
-      { name: 'South Village', hexes: ['4,14','5,14'], holder: null },
-      { name: 'Hill Town', hexes: ['10,13','11,13'], holder: null },
+      { name: 'St-Gilles', hexes: ['11,9','12,9','13,9'], holder: null },
+      { name: 'Marigny', hexes: ['6,13','7,13'], holder: null },
+      { name: 'La Chapelle', hexes: ['18,13','19,13'], holder: null },
+      { name: 'Canisy', hexes: ['12,15','13,15'], holder: null },
     ],
-    alliedWin: { objectivesNeeded: 3, maxAlliedLosses: 8 },
-    germanWin: { objectivesHeld: 3, maxGermanLosses: null },
+    alliedWin: { exitUnitsNeeded: 8, maxAlliedLosses: 12 },
+    germanWin: {},
+    alliedExitedUnits: 0,
     winner: null,
   };
 }
@@ -1356,7 +1477,7 @@ function loadOmahaScenario() {
   state.placementOrder = [GERMAN, ALLIED];
 
   const scenarioUnits = [
-    // ── German Initial (availableTurn: 0) ──
+    // ══ GERMAN — 352nd Infantry Division (WN Strongpoints) ══
     // WN-72/73 (Vierville)
     { type: 'ge_mg42_bunker', side: GERMAN, availableTurn: 0 },
     { type: 'ge_mg42_bunker', side: GERMAN, availableTurn: 0 },
@@ -1396,59 +1517,86 @@ function loadOmahaScenario() {
     { type: 'ge_mg42_bunker', side: GERMAN, availableTurn: 0 },
     { type: 'ge_75mm_case',   side: GERMAN, availableTurn: 0 },
     { type: 'ge_wn_garrison', side: GERMAN, availableTurn: 0 },
-    // Mortar positions
+    // Mortar positions (behind bluffs)
     { type: 'ge_81mm_mortar', side: GERMAN, availableTurn: 0 },
     { type: 'ge_81mm_mortar', side: GERMAN, availableTurn: 0 },
     { type: 'ge_81mm_mortar', side: GERMAN, availableTurn: 0 },
+    // Beach-level AA/AI
+    { type: 'ge_flak38',      side: GERMAN, availableTurn: 0 },
+    { type: 'ge_flak38',      side: GERMAN, availableTurn: 0 },
 
-    // ── German Reinforcements Turn 4 ──
-    { type: 'ge_352_reserve', side: GERMAN, availableTurn: 4 },
-    { type: 'ge_352_reserve', side: GERMAN, availableTurn: 4 },
-    { type: 'ge_352_reserve', side: GERMAN, availableTurn: 4 },
+    // ── German Reinforcements — 352nd Division reserves ──
+    { type: 'ge_352_reserve', side: GERMAN, availableTurn: 6 },
+    { type: 'ge_352_reserve', side: GERMAN, availableTurn: 6 },
+    { type: 'ge_352_reserve', side: GERMAN, availableTurn: 6 },
+    { type: 'ge_grenadier',   side: GERMAN, availableTurn: 8 },
+    { type: 'ge_grenadier',   side: GERMAN, availableTurn: 8 },
 
-    // ── American First Wave (availableTurn: 0) ──
+    // ══ AMERICAN — 16th & 116th RCT ══
+    // ── Wave 1 (Turn 0 — initial assault) ──
     { type: 'us_116_inf',     side: ALLIED, availableTurn: 0 },
     { type: 'us_116_inf',     side: ALLIED, availableTurn: 0 },
     { type: 'us_116_inf',     side: ALLIED, availableTurn: 0 },
+    { type: 'us_116_inf',     side: ALLIED, availableTurn: 0 },
+    { type: 'us_16_inf',      side: ALLIED, availableTurn: 0 },
     { type: 'us_16_inf',      side: ALLIED, availableTurn: 0 },
     { type: 'us_16_inf',      side: ALLIED, availableTurn: 0 },
     { type: 'us_16_inf',      side: ALLIED, availableTurn: 0 },
     { type: 'us_2ranger',     side: ALLIED, availableTurn: 0 },
-    { type: 'us_743_sherman', side: ALLIED, availableTurn: 0 },
-    { type: 'us_743_sherman', side: ALLIED, availableTurn: 0 },
-    { type: 'us_743_sherman', side: ALLIED, availableTurn: 0 },
-    { type: 'us_741_sherman', side: ALLIED, availableTurn: 0 },
+    { type: 'us_2ranger',     side: ALLIED, availableTurn: 0 },
     { type: 'us_engineer',    side: ALLIED, availableTurn: 0 },
     { type: 'us_engineer',    side: ALLIED, availableTurn: 0 },
+    { type: 'us_dd_tank',     side: ALLIED, availableTurn: 0 },
+    { type: 'us_dd_tank',     side: ALLIED, availableTurn: 0 },
+    { type: 'us_dd_tank',     side: ALLIED, availableTurn: 0 },
+    { type: 'us_dd_tank',     side: ALLIED, availableTurn: 0 },
 
-    // ── American Second Wave — Turn 2 ──
-    { type: 'us_116_inf',     side: ALLIED, availableTurn: 2 },
-    { type: 'us_116_inf',     side: ALLIED, availableTurn: 2 },
-    { type: 'us_116_inf',     side: ALLIED, availableTurn: 2 },
-    { type: 'us_16_inf',      side: ALLIED, availableTurn: 2 },
-    { type: 'us_16_inf',      side: ALLIED, availableTurn: 2 },
-    { type: 'us_5ranger',     side: ALLIED, availableTurn: 2 },
-    { type: 'us_engineer',    side: ALLIED, availableTurn: 2 },
+    // ── Wave 2 (Turn 4 — follow-up forces) ──
+    { type: 'us_116_inf',     side: ALLIED, availableTurn: 4 },
+    { type: 'us_116_inf',     side: ALLIED, availableTurn: 4 },
+    { type: 'us_116_inf',     side: ALLIED, availableTurn: 4 },
+    { type: 'us_16_inf',      side: ALLIED, availableTurn: 4 },
+    { type: 'us_16_inf',      side: ALLIED, availableTurn: 4 },
+    { type: 'us_5ranger',     side: ALLIED, availableTurn: 4 },
+    { type: 'us_armored_inf', side: ALLIED, availableTurn: 4 },
+    { type: 'us_armored_inf', side: ALLIED, availableTurn: 4 },
+    { type: 'us_engineer',    side: ALLIED, availableTurn: 4 },
+    { type: 'us_engineer',    side: ALLIED, availableTurn: 4 },
+    { type: 'us_743_sherman', side: ALLIED, availableTurn: 4 },
+    { type: 'us_743_sherman', side: ALLIED, availableTurn: 4 },
+    { type: 'us_741_sherman', side: ALLIED, availableTurn: 4 },
+    { type: 'us_741_sherman', side: ALLIED, availableTurn: 4 },
+    { type: 'us_m4_dozer',    side: ALLIED, availableTurn: 4 },
+    { type: 'us_m4_dozer',    side: ALLIED, availableTurn: 4 },
+    { type: 'us_bazooka',     side: ALLIED, availableTurn: 4 },
+    { type: 'us_bazooka',     side: ALLIED, availableTurn: 4 },
+    { type: 'us_mg',          side: ALLIED, availableTurn: 4 },
+    { type: 'us_mg',          side: ALLIED, availableTurn: 4 },
+    { type: 'us_60mortar',    side: ALLIED, availableTurn: 4 },
 
-    // ── American Third Wave — Turn 3 ──
-    { type: 'us_16_inf',      side: ALLIED, availableTurn: 3 },
-    { type: 'us_16_inf',      side: ALLIED, availableTurn: 3 },
-    { type: 'us_743_sherman', side: ALLIED, availableTurn: 3 },
+    // ── Wave 3 (Turn 9 — exploitation forces) ──
+    { type: 'us_18_inf',      side: ALLIED, availableTurn: 9 },
+    { type: 'us_18_inf',      side: ALLIED, availableTurn: 9 },
+    { type: 'us_16_inf',      side: ALLIED, availableTurn: 9 },
+    { type: 'us_16_inf',      side: ALLIED, availableTurn: 9 },
+    { type: 'us_76sherman',   side: ALLIED, availableTurn: 9 },
+    { type: 'us_76sherman',   side: ALLIED, availableTurn: 9 },
+    { type: 'us_wolverine',   side: ALLIED, availableTurn: 9 },
+    { type: 'us_wolverine',   side: ALLIED, availableTurn: 9 },
+    { type: 'us_priest',      side: ALLIED, availableTurn: 9 },
+    { type: 'us_mortar',      side: ALLIED, availableTurn: 9 },
+    { type: 'us_mortar',      side: ALLIED, availableTurn: 9 },
+    { type: 'us_fo',          side: ALLIED, availableTurn: 9 },
+    { type: 'us_m3_ht',       side: ALLIED, availableTurn: 9 },
+    { type: 'us_m3_ht',       side: ALLIED, availableTurn: 9 },
 
-    // ── American Fourth Wave — Turn 4 ──
-    { type: 'us_18_inf',      side: ALLIED, availableTurn: 4 },
-    { type: 'us_18_inf',      side: ALLIED, availableTurn: 4 },
-    { type: 'us_18_inf',      side: ALLIED, availableTurn: 4 },
-    { type: 'us_105mm',       side: ALLIED, availableTurn: 4 },
-    { type: 'us_priest',      side: ALLIED, availableTurn: 4 },
-
-    // ── American Naval Support (off-map, available from Turn 1) ──
+    // ── Naval Support (off-map, available from Turn 1) ──
     { type: 'us_dd_ship',     side: ALLIED, availableTurn: 0, offMap: true },
     { type: 'us_dd_ship',     side: ALLIED, availableTurn: 0, offMap: true },
     { type: 'us_cl_ship',     side: ALLIED, availableTurn: 0, offMap: true },
 
-    // ── American Air Support (off-map, available from Turn 2) ──
-    { type: 'us_p47',         side: ALLIED, availableTurn: 2, offMap: true },
+    // ── Air Support (off-map, available from Turn 3) ──
+    { type: 'us_p47',         side: ALLIED, availableTurn: 3, offMap: true },
   ];
 
   // German places first in Omaha, so German initial goes to rack, rest to reinforcements
@@ -1481,15 +1629,331 @@ function loadOmahaScenario() {
   state.alliedLosses = 0;
   state.germanLosses = 0;
   state.victoryConditions = {
-    turnLimit: 6,
+    turnLimit: 20,
     objectives: [
+      { name: 'D-1 (Vierville)', hexes: ['3,8','4,8'], holder: null, type: 'exit' },
+      { name: 'E-1 (St-Laurent)', hexes: ['16,8','17,8'], holder: null, type: 'exit' },
+      { name: 'E-3 (Colleville)', hexes: ['22,8','23,8'], holder: null, type: 'exit' },
       { name: 'Vierville', hexes: ['3,6','4,6','5,6'], holder: null, type: 'town' },
       { name: 'St-Laurent', hexes: ['15,6','16,6','17,6'], holder: null, type: 'town' },
       { name: 'Colleville', hexes: ['22,6','23,6','24,6'], holder: null, type: 'town' },
-      { name: 'Exit D-1', hexes: ['3,7','4,7'], holder: null, type: 'exit' },
-      { name: 'Exit E-1', hexes: ['16,7','17,7'], holder: null, type: 'exit' },
     ],
-    alliedWin: { townsNeeded: 2, exitsNeeded: 1, maxAlliedLosses: 20 },
+    alliedWin: { drawsNeeded: 2, maxAlliedLosses: 20 },
+    germanWin: {},
+    winner: null,
+  };
+}
+
+// ═══════════════════════════════════════════
+// SECTION 2d: GOLD BEACH SCENARIO
+// ═══════════════════════════════════════════
+
+function generateGoldMap() {
+  const map = [];
+  for (let c = 0; c < 28; c++) {
+    map[c] = [];
+    for (let r = 0; r < 16; r++) {
+      if (r >= 14) map[c][r] = T.BEACH;            // Rows 14-15: surf zone
+      else if (r === 13) map[c][r] = T.BEACH;       // Row 13: upper beach
+      else if (r === 12) map[c][r] = T.BEACH;       // Row 12: shingle line
+      else if (r >= 9 && r <= 11) map[c][r] = T.HILL; // Rows 9-11: dunes/low rise
+      else if (r >= 6 && r <= 8) map[c][r] = T.CLEAR; // Rows 6-8: inland fields
+      else map[c][r] = T.CLEAR;                      // Rows 0-5: deep inland
+    }
+  }
+
+  // Draw exits (roads through dunes) — 3 gaps at Le Hamel, center, La Rivière
+  const draws = [[4,5],[13,14],[23,24]];
+  for (const [c1, c2] of draws) {
+    for (let r = 9; r <= 12; r++) {
+      map[c1][r] = T.ROAD;
+      map[c2][r] = T.ROAD;
+    }
+  }
+
+  // Coastal road at row 5
+  for (let c = 0; c < 28; c++) map[c][5] = T.ROAD;
+
+  // Connect draws to coastal road
+  for (const [c1, c2] of draws) {
+    for (let r = 5; r <= 9; r++) {
+      map[c1][r] = T.ROAD;
+      map[c2][r] = T.ROAD;
+    }
+  }
+
+  // WN Fortification positions along dune crest (rows 9-10)
+  const fortHexes = [
+    // WN-37 Le Hamel (strongest — western strongpoint)
+    [3,9],[4,9],[5,9],[6,9],[4,10],[5,10],
+    // WN-35 center positions
+    [12,9],[13,9],[14,9],[13,10],
+    // WN-33 La Rivière (eastern strongpoint)
+    [22,9],[23,9],[24,9],[25,9],[23,10],[24,10],
+  ];
+  for (const [c, r] of fortHexes) {
+    map[c][r] = T.FORTIFICATION;
+  }
+
+  // Town hexes
+  const towns = [
+    // Le Hamel
+    [4,6],[5,6],[4,5],[5,5],
+    // Asnelles
+    [8,5],[9,5],[8,6],[9,6],
+    // Meuvaines
+    [13,4],[14,4],[13,3],
+    // Ver-sur-Mer
+    [18,5],[19,5],[18,6],[19,6],
+    // Crépon (inland objective)
+    [13,1],[14,1],[13,2],[14,2],
+    // Arromanches (far west)
+    [1,5],[2,5],
+  ];
+  for (const [c, r] of towns) {
+    map[c][r] = T.TOWN;
+  }
+
+  // Bocage behind villages (rows 2-4)
+  const bocage = [
+    [1,2],[2,2],[3,2],[3,3],[2,3],
+    [6,3],[7,3],[7,4],[6,4],
+    [10,2],[11,2],[10,3],[11,3],
+    [16,2],[17,2],[16,3],[17,3],
+    [20,3],[21,3],[20,2],[21,2],
+    [24,2],[25,2],[25,3],[26,3],
+  ];
+  for (const [c, r] of bocage) {
+    map[c][r] = T.BOCAGE;
+  }
+
+  // Woods
+  const woods = [
+    [0,0],[1,0],[0,1],[1,1],
+    [7,0],[8,0],[8,1],
+    [15,0],[16,0],[15,1],
+    [22,0],[23,0],[22,1],[23,1],
+    [26,0],[27,0],[27,1],
+    [10,6],[11,6],
+    [20,7],[21,7],
+    [2,7],[3,7],
+  ];
+  for (const [c, r] of woods) {
+    map[c][r] = T.WOODS;
+  }
+
+  // Hills on dune edges
+  const hills = [
+    [0,9],[1,9],[2,9],
+    [7,9],[8,9],
+    [10,9],[11,9],
+    [16,9],[17,9],[18,9],
+    [20,9],[21,9],
+    [26,9],[27,9],
+  ];
+  for (const [c, r] of hills) {
+    if (map[c][r] !== T.ROAD && map[c][r] !== T.FORTIFICATION) {
+      map[c][r] = T.HILL;
+    }
+  }
+
+  // Minefields on upper beach (row 12)
+  const minefields = [
+    [2,12],[6,12],[9,12],[12,12],[16,12],[19,12],[22,12],[26,12],
+    [4,13],[10,13],[17,13],[24,13],
+  ];
+  for (const [c, r] of minefields) {
+    if (map[c][r] === T.BEACH) map[c][r] = T.MINEFIELD;
+  }
+
+  // Wire obstacles on shingle (row 11, between beach and dunes)
+  const wire = [
+    [1,11],[3,11],[5,11],[7,11],[9,11],[11,11],[15,11],[17,11],[19,11],[21,11],[25,11],[27,11],
+  ];
+  for (const [c, r] of wire) {
+    if (map[c][r] === T.HILL) map[c][r] = T.WIRE;
+  }
+
+  // Trenches at defensive positions
+  const trenches = [
+    [3,10],[6,10],          // Le Hamel WN
+    [12,10],[14,10],        // Center WN
+    [22,10],[25,10],        // La Rivière WN
+  ];
+  for (const [c, r] of trenches) {
+    if (map[c][r] !== T.ROAD && map[c][r] !== T.FORTIFICATION) {
+      map[c][r] = T.TRENCH;
+    }
+  }
+
+  return map;
+}
+
+function loadGoldScenario() {
+  MAP_COLS = 28;
+  MAP_ROWS = 16;
+  state.map = generateGoldMap();
+  state.units = [];
+  state.turn = 1;
+  state.activeSide = GERMAN;
+  state.phase = PHASE_PLACEMENT;
+  nextUnitId = 1;
+
+  // German placement zones — around each WN strongpoint
+  const germanZone = new Set();
+  // WN-37 Le Hamel (cols 2-7, rows 8-11)
+  for (let c = 2; c <= 7; c++) for (let r = 8; r <= 11; r++) germanZone.add(hexKey(c, r));
+  // WN-35 center (cols 11-15, rows 8-11)
+  for (let c = 11; c <= 15; c++) for (let r = 8; r <= 11; r++) germanZone.add(hexKey(c, r));
+  // WN-33 La Rivière (cols 21-26, rows 8-11)
+  for (let c = 21; c <= 26; c++) for (let r = 8; r <= 11; r++) germanZone.add(hexKey(c, r));
+  // Mortar/reserve positions (behind dunes, rows 6-9)
+  for (let c = 5; c <= 25; c++) for (let r = 6; r <= 8; r++) germanZone.add(hexKey(c, r));
+
+  // British placement zone: beach rows 13-15
+  const alliedZone = new Set();
+  for (let c = 0; c < 28; c++) {
+    for (let r = 13; r <= 15; r++) {
+      alliedZone.add(hexKey(c, r));
+    }
+  }
+
+  state.placementZones = { [ALLIED]: alliedZone, [GERMAN]: germanZone };
+  state.placementOrder = [GERMAN, ALLIED];
+
+  const scenarioUnits = [
+    // ══ GERMAN — 716th/352nd Infantry Division (WN Strongpoints) ══
+    // WN-37 Le Hamel (strongest — casemate held out for hours historically)
+    { type: 'ge_mg42_bunker', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_mg42_bunker', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_75mm_case',   side: GERMAN, availableTurn: 0 },
+    { type: 'ge_88mm_case',   side: GERMAN, availableTurn: 0 },
+    { type: 'ge_wn_garrison', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_tobruk',      side: GERMAN, availableTurn: 0 },
+    // WN-35 center positions
+    { type: 'ge_mg42_bunker', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_mg42_bunker', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_50mm_at',     side: GERMAN, availableTurn: 0 },
+    { type: 'ge_wn_garrison', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_wn_garrison', side: GERMAN, availableTurn: 0 },
+    // WN-33 La Rivière (eastern strongpoint)
+    { type: 'ge_mg42_bunker', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_mg42_bunker', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_75mm_case',   side: GERMAN, availableTurn: 0 },
+    { type: 'ge_50mm_at',     side: GERMAN, availableTurn: 0 },
+    { type: 'ge_wn_garrison', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_tobruk',      side: GERMAN, availableTurn: 0 },
+    // Mortar positions (behind dunes)
+    { type: 'ge_81mm_mortar', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_81mm_mortar', side: GERMAN, availableTurn: 0 },
+    { type: 'ge_81mm_mortar', side: GERMAN, availableTurn: 0 },
+    // Beach-level AA
+    { type: 'ge_flak38',      side: GERMAN, availableTurn: 0 },
+    { type: 'ge_flak38',      side: GERMAN, availableTurn: 0 },
+
+    // ── German Reinforcements ──
+    { type: 'ge_grenadier',   side: GERMAN, availableTurn: 6 },
+    { type: 'ge_grenadier',   side: GERMAN, availableTurn: 6 },
+    { type: 'ge_stugiii',     side: GERMAN, availableTurn: 8 },
+    { type: 'ge_352_reserve', side: GERMAN, availableTurn: 8 },
+    { type: 'ge_352_reserve', side: GERMAN, availableTurn: 8 },
+
+    // ══ BRITISH — 50th (Northumbrian) Division + 8th Armoured Brigade ══
+    // ── Wave 1 (Turn 0 — initial assault) ──
+    { type: 'uk_inf',         side: ALLIED, availableTurn: 0 },
+    { type: 'uk_inf',         side: ALLIED, availableTurn: 0 },
+    { type: 'uk_inf',         side: ALLIED, availableTurn: 0 },
+    { type: 'uk_inf',         side: ALLIED, availableTurn: 0 },
+    { type: 'uk_inf',         side: ALLIED, availableTurn: 0 },
+    { type: 'uk_inf',         side: ALLIED, availableTurn: 0 },
+    { type: 'uk_commando',    side: ALLIED, availableTurn: 0 },
+    { type: 'uk_commando',    side: ALLIED, availableTurn: 0 },
+    { type: 'uk_engineer',    side: ALLIED, availableTurn: 0 },
+    { type: 'uk_engineer',    side: ALLIED, availableTurn: 0 },
+    { type: 'uk_dd_tank',     side: ALLIED, availableTurn: 0 },
+    { type: 'uk_dd_tank',     side: ALLIED, availableTurn: 0 },
+    { type: 'uk_dd_tank',     side: ALLIED, availableTurn: 0 },
+    { type: 'uk_avre',        side: ALLIED, availableTurn: 0 },
+    { type: 'uk_avre',        side: ALLIED, availableTurn: 0 },
+
+    // ── Wave 2 (Turn 4 — armor and support) ──
+    { type: 'uk_inf',         side: ALLIED, availableTurn: 4 },
+    { type: 'uk_inf',         side: ALLIED, availableTurn: 4 },
+    { type: 'uk_inf',         side: ALLIED, availableTurn: 4 },
+    { type: 'uk_inf',         side: ALLIED, availableTurn: 4 },
+    { type: 'uk_sherman_v',   side: ALLIED, availableTurn: 4 },
+    { type: 'uk_sherman_v',   side: ALLIED, availableTurn: 4 },
+    { type: 'uk_firefly',     side: ALLIED, availableTurn: 4 },
+    { type: 'uk_engineer',    side: ALLIED, availableTurn: 4 },
+    { type: 'uk_piat',        side: ALLIED, availableTurn: 4 },
+    { type: 'uk_piat',        side: ALLIED, availableTurn: 4 },
+    { type: 'uk_mg',          side: ALLIED, availableTurn: 4 },
+    { type: 'uk_mg',          side: ALLIED, availableTurn: 4 },
+    { type: 'uk_carrier',     side: ALLIED, availableTurn: 4 },
+    { type: 'uk_mortar',      side: ALLIED, availableTurn: 4 },
+
+    // ── Wave 3 (Turn 8 — exploitation) ──
+    { type: 'uk_inf',         side: ALLIED, availableTurn: 8 },
+    { type: 'uk_inf',         side: ALLIED, availableTurn: 8 },
+    { type: 'uk_cromwell',    side: ALLIED, availableTurn: 8 },
+    { type: 'uk_cromwell',    side: ALLIED, availableTurn: 8 },
+    { type: 'uk_churchill',   side: ALLIED, availableTurn: 8 },
+    { type: 'uk_sexton',      side: ALLIED, availableTurn: 8 },
+    { type: 'uk_mortar',      side: ALLIED, availableTurn: 8 },
+    { type: 'uk_fo',          side: ALLIED, availableTurn: 8 },
+    { type: 'uk_6pdr',        side: ALLIED, availableTurn: 8 },
+    { type: 'uk_6pdr',        side: ALLIED, availableTurn: 8 },
+    { type: 'uk_carrier',     side: ALLIED, availableTurn: 8 },
+    { type: 'uk_carrier',     side: ALLIED, availableTurn: 8 },
+
+    // ── Naval Support (off-map, available from Turn 1) ──
+    { type: 'uk_dd_ship',     side: ALLIED, availableTurn: 0, offMap: true },
+    { type: 'uk_dd_ship',     side: ALLIED, availableTurn: 0, offMap: true },
+    { type: 'uk_cl_ship',     side: ALLIED, availableTurn: 0, offMap: true },
+
+    // ── Air Support (off-map, available from Turn 3) ──
+    { type: 'uk_typhoon',     side: ALLIED, availableTurn: 3, offMap: true },
+    { type: 'uk_typhoon',     side: ALLIED, availableTurn: 3, offMap: true },
+  ];
+
+  // German places first in Gold Beach
+  state.rack = [];
+  state.allReinforcements = [];
+  for (const entry of scenarioUnits) {
+    if (entry.offMap) {
+      if (entry.availableTurn === 0) {
+        // Off-map units available at start: auto-place immediately
+      } else {
+        state.allReinforcements.push(entry);
+      }
+      continue;
+    }
+    if (entry.availableTurn === 0) {
+      if (entry.side === GERMAN) {
+        state.rack.push({ type: entry.type, side: entry.side });
+      } else {
+        state.allReinforcements.push(entry);
+      }
+    } else {
+      state.allReinforcements.push(entry);
+    }
+  }
+  placeInitialOffMapUnits(scenarioUnits);
+
+  state.selectedRackIndex = -1;
+  state.selectedUnitId = null;
+  state.alliedLosses = 0;
+  state.germanLosses = 0;
+  state.victoryConditions = {
+    turnLimit: 16,
+    objectives: [
+      { name: 'Le Hamel (WN-37)', hexes: ['4,9','5,9'], holder: null },
+      { name: 'La Rivière (WN-33)', hexes: ['23,9','24,9'], holder: null },
+      { name: 'Asnelles', hexes: ['8,5','9,5'], holder: null },
+      { name: 'Ver-sur-Mer', hexes: ['18,5','19,5'], holder: null },
+      { name: 'Crépon', hexes: ['13,1','14,1'], holder: null },
+    ],
+    alliedWin: { objectivesNeeded: 3, maxAlliedLosses: 15 },
     germanWin: {},
     winner: null,
   };
@@ -2519,18 +2983,19 @@ function executeMove(unit, destCol, destRow) {
       }
     }
   }
-  // DD tank swamping: DD Sherman entering beach from deep water (row 17+) risks sinking
-  if (unit.type === 'us_dd_tank' && fromRow >= 17 && destRow <= 16 && !unit.destroyed) {
+  // DD tank swamping: DD tank entering beach from deep water risks sinking (1-2 on d6)
+  const ddType = UNIT_TYPES[unit.type];
+  if (ddType.ddTank && fromRow >= MAP_ROWS - 3 && state.map[fromCol] && state.map[fromCol][fromRow] === T.BEACH && !unit.destroyed) {
     const swampRoll = Math.floor(Math.random() * 6) + 1;
     if (swampRoll <= 2) {
       unit.destroyed = true;
-      addLog(`  DD Sherman swamped entering beach — roll:${swampRoll} → SUNK!`, 'log-combat');
-      state.replayLog.push({ action: 'fire', unitName: 'Sea', targetName: 'DD Sherman', fromCol: destCol, fromRow: destRow, toCol: destCol, toRow: destRow, result: 'DE', odds: 'swamp' });
+      addLog(`  ${ddType.name} swamped entering beach — roll:${swampRoll} → SUNK!`, 'log-combat');
+      state.replayLog.push({ action: 'fire', unitName: 'Sea', targetName: ddType.name, fromCol: destCol, fromRow: destRow, toCol: destCol, toRow: destRow, result: 'DE', odds: 'swamp' });
       updateSpotting();
       updateUI();
       return;
     } else {
-      addLog(`  DD Sherman reaches beach safely — roll:${swampRoll}`, 'log-move');
+      addLog(`  ${ddType.name} reaches beach safely — roll:${swampRoll}`, 'log-move');
     }
   }
 
@@ -2621,6 +3086,49 @@ function unloadUnit() {
   passenger.moved = true; // unloading uses the passenger's action
   addLog(`${UNIT_TYPES[passenger.type].name} unloads from ${UNIT_TYPES[carrier.type].name}`, 'log-move');
   updateUI();
+}
+
+function exitMapUnit() {
+  const unit = getSelectedUnit();
+  if (!unit) { showToast('Select a unit first'); return; }
+  if (unit.side !== state.activeSide) { showToast('Not your unit'); return; }
+  if (state.phase !== PHASE_MOVEMENT) { showToast('Can only exit during Movement phase'); return; }
+  if (unit.moved || unit.fired) { showToast('Unit already acted this turn'); return; }
+  const vc = state.victoryConditions;
+  if (!vc || vc.alliedWin.exitUnitsNeeded === undefined) { showToast('Map exit not available in this scenario'); return; }
+  if (unit.side !== ALLIED) { showToast('Only Allied units can exit the map'); return; }
+  if (unit.row !== MAP_ROWS - 1) { showToast('Unit must be on the south edge to exit'); return; }
+  if (UNIT_TYPES[unit.type].aircraft || UNIT_TYPES[unit.type].naval) { showToast('Aircraft/naval cannot exit map'); return; }
+
+  // Exit the unit — remove from map and count passengers
+  const exitName = UNIT_TYPES[unit.type].name;
+  let exitCount = 1;
+  // Also exit any passengers
+  if (unit.passengers && unit.passengers.length > 0) {
+    for (const pid of unit.passengers) {
+      const p = state.units.find(u => u.id === pid);
+      if (p && !p.destroyed) {
+        p.destroyed = true;
+        p.loadedOnto = null;
+        exitCount++;
+        addLog(`  ${UNIT_TYPES[p.type].name} exits the map (passenger)`, 'log-move');
+      }
+    }
+    unit.passengers = [];
+  }
+  unit.destroyed = true;
+  vc.alliedExitedUnits = (vc.alliedExitedUnits || 0) + exitCount;
+  addLog(`${exitName} exits the south map edge! (${vc.alliedExitedUnits}/${vc.alliedWin.exitUnitsNeeded} exited)`, 'log-move');
+  state.replayLog.push({ action: 'exit', unitName: exitName, fromCol: unit.col, fromRow: unit.row });
+  state.selectedUnitId = null;
+
+  // Check for immediate victory
+  if (vc.alliedExitedUnits >= vc.alliedWin.exitUnitsNeeded) {
+    showVictoryModal('allied');
+  }
+
+  updateUI();
+  autoSelectNext();
 }
 
 function executeOverrun(attacker, targetCol, targetRow) {
@@ -3185,38 +3693,42 @@ function checkVictory() {
   const vc = state.victoryConditions;
   if (!vc || vc.winner) return null;
 
-  const isOmaha = vc.alliedWin.townsNeeded !== undefined;
+  const isOmaha = vc.alliedWin.drawsNeeded !== undefined;
+  const isExit = vc.alliedWin.exitUnitsNeeded !== undefined;
 
-  if (isOmaha) {
-    // Immediate loss: Allied losses reach threshold
-    if (state.alliedLosses >= vc.alliedWin.maxAlliedLosses) {
+  // Immediate loss: Allied losses reach threshold (all scenarios)
+  if (vc.alliedWin.maxAlliedLosses && state.alliedLosses >= vc.alliedWin.maxAlliedLosses) {
+    return 'german';
+  }
+
+  if (isExit) {
+    // Cobra: exit-based victory — check immediate win
+    if ((vc.alliedExitedUnits || 0) >= vc.alliedWin.exitUnitsNeeded) {
+      return 'allied';
+    }
+    // At turn limit, check if enough units exited
+    if (state.turn >= vc.turnLimit) {
+      if ((vc.alliedExitedUnits || 0) >= vc.alliedWin.exitUnitsNeeded) {
+        return 'allied';
+      }
       return 'german';
     }
-    // Check at turn limit
+  } else if (isOmaha) {
+    // Omaha: control 2 of 3 draw exits
     if (state.turn >= vc.turnLimit) {
-      const towns = vc.objectives.filter(o => o.type === 'town' && o.holder === ALLIED).length;
-      const exits = vc.objectives.filter(o => o.type === 'exit' && o.holder === ALLIED).length;
-      if (towns >= vc.alliedWin.townsNeeded && exits >= vc.alliedWin.exitsNeeded) {
+      const draws = vc.objectives.filter(o => o.type === 'exit' && o.holder === ALLIED).length;
+      if (draws >= vc.alliedWin.drawsNeeded) {
         return 'allied';
       }
       return 'german';
     }
   } else {
-    // Cobra: immediate loss if Allied losses reach threshold
-    if (state.alliedLosses >= vc.alliedWin.maxAlliedLosses) {
-      return 'german';
-    }
-    // Check at turn limit
+    // Generic objectives-based victory
     if (state.turn >= vc.turnLimit) {
       const alliedHeld = vc.objectives.filter(o => o.holder === ALLIED).length;
-      const germanHeld = vc.objectives.filter(o => o.holder === GERMAN).length;
-      if (alliedHeld >= vc.alliedWin.objectivesNeeded && state.alliedLosses < vc.alliedWin.maxAlliedLosses) {
+      if (vc.alliedWin.objectivesNeeded && alliedHeld >= vc.alliedWin.objectivesNeeded) {
         return 'allied';
       }
-      if (germanHeld >= vc.germanWin.objectivesHeld) {
-        return 'german';
-      }
-      // Default: if allies didn't meet their conditions, German wins
       return 'german';
     }
   }
@@ -3229,29 +3741,38 @@ function showVictoryModal(winner) {
   const title = winner === ALLIED ? 'Allied Victory!' : 'German Victory!';
   document.getElementById('victory-title').textContent = title;
 
-  const isOmaha = vc.alliedWin.townsNeeded !== undefined;
+  const isOmaha = vc.alliedWin.drawsNeeded !== undefined;
+  const isExit = vc.alliedWin.exitUnitsNeeded !== undefined;
   let details = '';
 
-  const alliedHeld = vc.objectives.filter(o => o.holder === ALLIED);
-  const germanHeld = vc.objectives.filter(o => o.holder === GERMAN);
-
-  if (isOmaha) {
-    const towns = vc.objectives.filter(o => o.type === 'town' && o.holder === ALLIED).length;
-    const exits = vc.objectives.filter(o => o.type === 'exit' && o.holder === ALLIED).length;
+  if (isExit) {
+    // Cobra exit-based
+    const exited = vc.alliedExitedUnits || 0;
     if (winner === ALLIED) {
-      details = `The Allies secured ${towns} town(s) and ${exits} exit(s), establishing the beachhead.`;
+      details = `${exited} Allied units broke through and exited the map — the bocage line is shattered!`;
+    } else if (state.alliedLosses >= vc.alliedWin.maxAlliedLosses) {
+      details = `Allied losses reached ${state.alliedLosses} — the breakout attempt has failed.`;
+    } else {
+      details = `Only ${exited}/${vc.alliedWin.exitUnitsNeeded} Allied units exited. The German line held.`;
+    }
+  } else if (isOmaha) {
+    const draws = vc.objectives.filter(o => o.type === 'exit' && o.holder === ALLIED).length;
+    if (winner === ALLIED) {
+      details = `The Allies secured ${draws} draw exit(s), establishing the beachhead!`;
     } else if (state.alliedLosses >= vc.alliedWin.maxAlliedLosses) {
       details = `Allied losses reached ${state.alliedLosses} — the assault has been repulsed.`;
     } else {
-      details = `The Allies failed to secure enough objectives. Towns: ${towns}/${vc.alliedWin.townsNeeded}, Exits: ${exits}/${vc.alliedWin.exitsNeeded}.`;
+      details = `The Allies secured only ${draws}/${vc.alliedWin.drawsNeeded} draw exits. The beach is lost.`;
     }
   } else {
+    // Generic objectives
+    const alliedHeld = vc.objectives.filter(o => o.holder === ALLIED);
     if (winner === ALLIED) {
       details = `The Allies control ${alliedHeld.length} objective(s) with only ${state.alliedLosses} losses.`;
     } else if (state.alliedLosses >= vc.alliedWin.maxAlliedLosses) {
       details = `Allied losses reached ${state.alliedLosses} — the attack has stalled.`;
     } else {
-      details = `Germany holds ${germanHeld.length} objective(s). The Allied advance has been stopped.`;
+      details = `The Allied advance has been stopped.`;
     }
   }
   details += `\n\nAllied losses: ${state.alliedLosses} | German losses: ${state.germanLosses}`;
@@ -3267,7 +3788,8 @@ function updateObjectivesPanel() {
   const body = document.getElementById('objectives-body');
   if (!vc || !body) return;
 
-  const isOmaha = vc.alliedWin.townsNeeded !== undefined;
+  const isOmaha = vc.alliedWin.drawsNeeded !== undefined;
+  const isExit = vc.alliedWin.exitUnitsNeeded !== undefined;
   let html = '';
 
   for (const obj of vc.objectives) {
@@ -3280,15 +3802,18 @@ function updateObjectivesPanel() {
 
   html += '<div class="obj-divider"></div>';
 
-  if (isOmaha) {
-    const towns = vc.objectives.filter(o => o.type === 'town' && o.holder === ALLIED).length;
-    const exits = vc.objectives.filter(o => o.type === 'exit' && o.holder === ALLIED).length;
-    html += `<div class="obj-summary">Allied: ${towns}/${vc.alliedWin.townsNeeded} towns, ${exits}/${vc.alliedWin.exitsNeeded} exits | Losses: ${state.alliedLosses}/${vc.alliedWin.maxAlliedLosses}</div>`;
+  if (isExit) {
+    const exited = vc.alliedExitedUnits || 0;
+    html += `<div class="obj-summary">Units exited: ${exited}/${vc.alliedWin.exitUnitsNeeded} | Losses: ${state.alliedLosses}/${vc.alliedWin.maxAlliedLosses}</div>`;
+    html += `<div class="obj-summary">German losses: ${state.germanLosses}</div>`;
+  } else if (isOmaha) {
+    const draws = vc.objectives.filter(o => o.type === 'exit' && o.holder === ALLIED).length;
+    html += `<div class="obj-summary">Draw exits: ${draws}/${vc.alliedWin.drawsNeeded} | Losses: ${state.alliedLosses}/${vc.alliedWin.maxAlliedLosses}</div>`;
     html += `<div class="obj-summary">German losses: ${state.germanLosses}</div>`;
   } else {
     const alliedHeld = vc.objectives.filter(o => o.holder === ALLIED).length;
     const germanHeld = vc.objectives.filter(o => o.holder === GERMAN).length;
-    html += `<div class="obj-summary">Allied: ${alliedHeld}/${vc.alliedWin.objectivesNeeded} needed | Losses: ${state.alliedLosses}/${vc.alliedWin.maxAlliedLosses}</div>`;
+    html += `<div class="obj-summary">Allied: ${alliedHeld} held | Losses: ${state.alliedLosses}/${vc.alliedWin.maxAlliedLosses || '—'}</div>`;
     html += `<div class="obj-summary">German: ${germanHeld} held | Losses: ${state.germanLosses}</div>`;
   }
   html += `<div class="obj-summary">Turn ${state.turn} of ${vc.turnLimit}</div>`;
@@ -4089,6 +4614,8 @@ document.addEventListener('keydown', (e) => {
     if (!isPlacing) loadUnit();
   } else if (e.key === 'u' || e.key === 'U') {
     if (!isPlacing) unloadUnit();
+  } else if (e.key === 'x' || e.key === 'X') {
+    if (!isPlacing) exitMapUnit();
   } else if (e.key === 'r' || e.key === 'R') {
     if (isPlacing) {
       const sel = getSelectedUnit();
@@ -4216,6 +4743,7 @@ document.getElementById('btn-fire').addEventListener('click', enterFireMode);
 document.getElementById('btn-move').addEventListener('click', enterMoveMode);
 document.getElementById('btn-load').addEventListener('click', loadUnit);
 document.getElementById('btn-unload').addEventListener('click', unloadUnit);
+document.getElementById('btn-exit-map').addEventListener('click', exitMapUnit);
 document.getElementById('btn-end-phase').addEventListener('click', advancePhase);
 document.getElementById('btn-next-unit').addEventListener('click', () => {
   const isPlacing = state.phase === PHASE_PLACEMENT || state.phase === PHASE_REINFORCEMENT;
@@ -4412,6 +4940,7 @@ function updateUI() {
     btnMove.className = 'hidden';
     btnLoad.className = 'hidden';
     btnUnload.className = 'hidden';
+    document.getElementById('btn-exit-map').className = 'hidden';
     btnReturn.className = '';
     btnReturn.disabled = !sel || sel.side !== state.activeSide;
     btnNext.disabled = state.rack.length === 0;
@@ -4421,8 +4950,9 @@ function updateUI() {
     btnMove.className = '';
     btnReturn.className = 'hidden';
 
-    // Show Load/Unload buttons during movement phase
+    // Show Load/Unload/Exit buttons during movement phase
     const isMovement = state.phase === PHASE_MOVEMENT;
+    const btnExitMap = document.getElementById('btn-exit-map');
     if (isMovement && sel && sel.side === state.activeSide) {
       const selType = UNIT_TYPES[sel.type];
       // Show Load: infantry in same hex as empty transport
@@ -4435,9 +4965,17 @@ function updateUI() {
       btnLoad.disabled = !canLoad;
       btnUnload.className = canUnload ? '' : 'hidden';
       btnUnload.disabled = !canUnload;
+      // Show Exit Map: Allied unit on south edge in exit-victory scenario
+      const vc = state.victoryConditions;
+      const canExit = vc && vc.alliedWin.exitUnitsNeeded !== undefined &&
+        sel.side === ALLIED && sel.row === MAP_ROWS - 1 &&
+        !sel.moved && !sel.fired && !selType.aircraft && !selType.naval;
+      btnExitMap.className = canExit ? '' : 'hidden';
+      btnExitMap.disabled = !canExit;
     } else {
       btnLoad.className = 'hidden';
       btnUnload.className = 'hidden';
+      btnExitMap.className = 'hidden';
     }
 
     const canFireNormal = sel && sel.side === state.activeSide && state.phase === PHASE_COMBAT && !sel.fired && !sel.moved && !UNIT_TYPES[sel.type].aircraft;
@@ -4451,6 +4989,7 @@ function updateUI() {
       btnMove.className = 'hidden';
       btnLoad.className = 'hidden';
       btnUnload.className = 'hidden';
+      btnExitMap.className = 'hidden';
     }
     const hasAvailable = state.units.some(u => {
       if (u.destroyed || !u.placed || u.side !== state.activeSide) return false;
@@ -4612,6 +5151,10 @@ function init() {
 
   document.getElementById('card-omaha').addEventListener('click', () => {
     startScenario(loadOmahaScenario, 'Omaha Beach — D-Day, June 6 1944');
+  });
+
+  document.getElementById('card-gold').addEventListener('click', () => {
+    startScenario(loadGoldScenario, 'Gold Beach — D-Day, June 6 1944');
   });
 
   // Resume game card
