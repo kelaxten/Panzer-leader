@@ -420,6 +420,33 @@ canvas { display: block; cursor: crosshair; flex: 1; }
 }
 #status-toast.visible { display: block; }
 
+/* Phase transition banner */
+#phase-banner {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.8);
+  background: rgba(20,18,14,0.95);
+  border: 2px solid #888;
+  padding: 16px 40px;
+  font-family: 'Courier New', monospace;
+  font-size: 22px;
+  font-weight: bold;
+  text-align: center;
+  z-index: 250;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+#phase-banner.visible {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+#phase-banner.allied { color: #8cb86e; border-color: #6b8e4e; }
+#phase-banner.german { color: #ccc; border-color: #999; }
+
 /* Turn summary modal */
 #summary-modal {
   display: none;
@@ -638,7 +665,16 @@ canvas { display: block; cursor: crosshair; flex: 1; }
       <tr><td>Beach</td><td>1</td><td>2</td><td>&times;1</td><td>No</td></tr>
       <tr><td>Bluff</td><td>3</td><td>&#8734;</td><td>&times;2</td><td>Yes</td></tr>
       <tr><td>Fortification</td><td>1</td><td>&#8734;</td><td>&times;3</td><td>Yes</td></tr>
+      <tr><td>Minefield</td><td>1</td><td>1</td><td>&times;1</td><td>No</td></tr>
+      <tr><td>Wire</td><td>halt</td><td>1</td><td>&times;1</td><td>No</td></tr>
+      <tr><td>Trench</td><td>1</td><td>&#8734;</td><td>&times;3</td><td>No</td></tr>
     </table>
+    <p style="font-size:11px;color:#888;margin-top:4px;">
+      <b>Minefield:</b> Entering unit attacked at 2:1 CRT. Cleared after triggering.<br>
+      <b>Wire:</b> Infantry halts on entry (cannot continue). Vehicles pass freely.<br>
+      <b>Trench:</b> Infantry only. &times;3 defense bonus. Vehicles cannot enter.<br>
+      <b>DD Tank:</b> Swamping roll on beach entry: 1-2 on d6 = sunk.
+    </p>
 
     <h3>Unit Stats</h3>
     <ul>
@@ -706,6 +742,7 @@ canvas { display: block; cursor: crosshair; flex: 1; }
 </div>
 
 <div id="status-toast"></div>
+<div id="phase-banner"></div>
 
 <div id="summary-modal">
   <div class="modal-box">
@@ -730,7 +767,7 @@ const STACK_LIMIT = 4;
 // Terrain types
 const T = {
   CLEAR: 0, WOODS: 1, TOWN: 2, HILL: 3, ROAD: 4, BOCAGE: 5,
-  BEACH: 6, BLUFF: 7, FORTIFICATION: 8
+  BEACH: 6, BLUFF: 7, FORTIFICATION: 8, MINEFIELD: 9, WIRE: 10, TRENCH: 11
 };
 
 const TERRAIN_INFO = {
@@ -743,6 +780,9 @@ const TERRAIN_INFO = {
   [T.BEACH]:  { name: 'Beach',  moveCostInf: 1, moveCostVeh: 2, dfMod: 1, blockLOS: false, color: '#c8b878' },
   [T.BLUFF]:  { name: 'Bluff',  moveCostInf: 3, moveCostVeh: 99, dfMod: 2, blockLOS: true, color: '#6a6a4a' },
   [T.FORTIFICATION]: { name: 'Fortification', moveCostInf: 1, moveCostVeh: 99, dfMod: 3, blockLOS: true, color: '#555555' },
+  [T.MINEFIELD]: { name: 'Minefield', moveCostInf: 1, moveCostVeh: 1, dfMod: 1, blockLOS: false, color: '#7a5a3a' },
+  [T.WIRE]:      { name: 'Wire',      moveCostInf: 1, moveCostVeh: 1, dfMod: 1, blockLOS: false, color: '#8a7a5a', wire: true },
+  [T.TRENCH]:    { name: 'Trench',    moveCostInf: 1, moveCostVeh: 99, dfMod: 3, blockLOS: false, color: '#5a5a3a' },
 };
 
 // Sides
@@ -935,6 +975,7 @@ let state = {
   wrecks: [],               // wreck markers: { col, row, name }
   replayLog: [],            // structured action log for turn replay: { action, ... }
   replayActive: false,      // true when replay animation is playing
+  combatFlash: null,        // { col, row, color, endTime } for combat result flash
 };
 
 let nextUnitId = 1;
@@ -1241,6 +1282,38 @@ function generateOmahaMap() {
     }
   }
 
+  // Minefields — scattered across upper beach (row 15-16)
+  const minefields = [
+    [2,15],[5,15],[8,15],[12,15],[15,15],[18,15],[21,15],[24,15],[27,15],
+    [4,16],[9,16],[14,16],[19,16],[25,16],
+  ];
+  for (const [c, r] of minefields) {
+    if (map[c][r] === T.BEACH) map[c][r] = T.MINEFIELD;
+  }
+
+  // Wire obstacles — shingle line (row 14, between beach and bluffs)
+  const wire = [
+    [1,14],[3,14],[5,14],[7,14],[9,14],[11,14],[13,14],[15,14],[17,14],[19,14],[21,14],[23,14],[25,14],[27,14],[29,14],
+  ];
+  for (const [c, r] of wire) {
+    if (map[c][r] === T.BLUFF) map[c][r] = T.WIRE;
+  }
+
+  // Trenches — German defensive positions behind bluffs (rows 10-11)
+  const trenches = [
+    [3,10],[4,10],[5,10],   // Vierville WN
+    [7,10],[8,10],          // Dog White WN
+    [10,10],[11,10],        // Les Moulins WN
+    [15,10],[16,10],[17,10],// St-Laurent WN
+    [22,10],[23,10],[24,10],// Colleville WN
+    [26,10],[27,10],        // East Colleville WN
+  ];
+  for (const [c, r] of trenches) {
+    if (map[c][r] !== T.ROAD && map[c][r] !== T.FORTIFICATION) {
+      map[c][r] = T.TRENCH;
+    }
+  }
+
   return map;
 }
 
@@ -1534,7 +1607,8 @@ function findReachable(unit) {
     const neighbors = hexNeighbors(cur.col, cur.row);
     for (const n of neighbors) {
       const terrain = state.map[n.col][n.row];
-      let cost = isVehicle ? TERRAIN_INFO[terrain].moveCostVeh : TERRAIN_INFO[terrain].moveCostInf;
+      const tinfo = TERRAIN_INFO[terrain];
+      let cost = isVehicle ? tinfo.moveCostVeh : tinfo.moveCostInf;
       // Wrecks add +1 MP cost for vehicles
       if (isVehicle && state.wrecks.some(w => w.col === n.col && w.row === n.row)) {
         cost += 1;
@@ -1560,6 +1634,8 @@ function findReachable(unit) {
       const existing = reachable.get(nk);
       if (existing && existing.mp >= remaining) continue;
       reachable.set(nk, { mp: remaining, overrun: false });
+      // Wire halts infantry: they can enter but cannot continue moving from wire hex
+      if (tinfo.wire && !isVehicle) continue;
       queue.push({ col: n.col, row: n.row, mp: remaining });
     }
   }
@@ -1720,6 +1796,45 @@ function drawMap() {
         ctx.strokeStyle = '#444';
         ctx.lineWidth = 1;
         ctx.strokeRect(x - 7, y - 4, 14, 8);
+      }
+      if (terrain === T.MINEFIELD) {
+        // Skull/danger symbol — red X with dots
+        ctx.strokeStyle = '#c44';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x - 5, y - 5); ctx.lineTo(x + 5, y + 5);
+        ctx.moveTo(x + 5, y - 5); ctx.lineTo(x - 5, y + 5);
+        ctx.stroke();
+        ctx.fillStyle = '#c44';
+        ctx.beginPath(); ctx.arc(x, y - 7, 1.5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(x, y + 7, 1.5, 0, Math.PI * 2); ctx.fill();
+      }
+      if (terrain === T.WIRE) {
+        // Barbed wire — zigzag lines
+        ctx.strokeStyle = '#888';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x - 10, y);
+        for (let w = -8; w <= 10; w += 4) {
+          ctx.lineTo(x + w, y + (w % 8 === 0 ? -4 : 4));
+        }
+        ctx.stroke();
+        // Small barbs
+        ctx.fillStyle = '#888';
+        for (let w = -6; w <= 6; w += 6) {
+          ctx.beginPath(); ctx.arc(x + w, y + (w % 12 === 0 ? -3 : 3), 1, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+      if (terrain === T.TRENCH) {
+        // Trench — parallel lines with fill
+        ctx.strokeStyle = '#4a4a2a';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x - 9, y - 2); ctx.lineTo(x + 9, y - 2);
+        ctx.moveTo(x - 9, y + 2); ctx.lineTo(x + 9, y + 2);
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(60,50,30,0.4)';
+        ctx.fillRect(x - 9, y - 2, 18, 4);
       }
     }
   }
@@ -2114,8 +2229,67 @@ function render() {
   drawOverlays();
   drawWrecks();
   drawUnits();
+  drawCombatFlash();
   drawReplayHighlight();
+  drawHoverTooltip();
   requestAnimationFrame(render);
+}
+
+function drawHoverTooltip() {
+  if (!state.mouseHex || state.replayActive) return;
+  const { col, row } = state.mouseHex;
+  const units = getUnitsAt(col, row);
+  if (units.length === 0) return;
+  const { x, y } = hexToPixel(col, row);
+  const lineHeight = 14;
+  const padding = 6;
+  const lines = units.map(u => {
+    const ut = UNIT_TYPES[u.type];
+    const status = u.dispersed ? ' [D]' : u.fired ? ' [F]' : u.moved ? ' [M]' : '';
+    return `${ut.name} ${ut.at}-${ut.ap}-${ut.df} R:${ut.range === 99 ? '*' : ut.range}${status}`;
+  });
+  const boxW = Math.max(...lines.map(l => l.length)) * 7 + padding * 2;
+  const boxH = lines.length * lineHeight + padding * 2;
+  const tx = x + HEX_SIZE + 4;
+  const ty = y - boxH / 2;
+  ctx.fillStyle = 'rgba(20,18,14,0.92)';
+  ctx.strokeStyle = 'rgba(200,180,140,0.6)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.rect(tx, ty, boxW, boxH);
+  ctx.fill();
+  ctx.stroke();
+  ctx.font = '11px Courier New';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  for (let i = 0; i < lines.length; i++) {
+    const u = units[i];
+    ctx.fillStyle = u.side === ALLIED ? '#8cb86e' : '#bbb';
+    ctx.fillText(lines[i], tx + padding, ty + padding + i * lineHeight);
+  }
+}
+
+function drawCombatFlash() {
+  if (!state.combatFlash) return;
+  const f = state.combatFlash;
+  if (Date.now() > f.endTime) {
+    state.combatFlash = null;
+    return;
+  }
+  const { x, y } = hexToPixel(f.col, f.row);
+  const t = (f.endTime - Date.now()) / 600;
+  const alpha = 0.15 + 0.45 * t;
+  ctx.fillStyle = f.color.replace(/[\d.]+\)$/, alpha + ')');
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const angle = Math.PI / 3 * i - Math.PI / 6;
+    const px = x + HEX_SIZE * Math.cos(angle);
+    const py = y + HEX_SIZE * Math.sin(angle);
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
 }
 
 function drawReplayHighlight() {
@@ -2345,8 +2519,50 @@ function executeMove(unit, destCol, destRow) {
       }
     }
   }
+  // DD tank swamping: DD Sherman entering beach from deep water (row 17+) risks sinking
+  if (unit.type === 'us_dd_tank' && fromRow >= 17 && destRow <= 16 && !unit.destroyed) {
+    const swampRoll = Math.floor(Math.random() * 6) + 1;
+    if (swampRoll <= 2) {
+      unit.destroyed = true;
+      addLog(`  DD Sherman swamped entering beach — roll:${swampRoll} → SUNK!`, 'log-combat');
+      state.replayLog.push({ action: 'fire', unitName: 'Sea', targetName: 'DD Sherman', fromCol: destCol, fromRow: destRow, toCol: destCol, toRow: destRow, result: 'DE', odds: 'swamp' });
+      updateSpotting();
+      updateUI();
+      return;
+    } else {
+      addLog(`  DD Sherman reaches beach safely — roll:${swampRoll}`, 'log-move');
+    }
+  }
+
+  // Minefield attack: entering a minefield hex triggers 2:1 CRT attack
+  if (state.map[destCol] && state.map[destCol][destRow] === T.MINEFIELD && !unit.destroyed) {
+    const mineRoll = Math.floor(Math.random() * 6);
+    const mineResult = CRT['2:1'][mineRoll];
+    const mineDie = mineRoll + 1;
+    addLog(`  MINEFIELD at (${destCol},${destRow})! ${UNIT_TYPES[unit.type].name} — 2:1 odds — die:${mineDie} → ${mineResult}`, 'log-combat');
+    state.replayLog.push({ action: 'fire', unitName: 'Minefield', targetName: UNIT_TYPES[unit.type].name, fromCol: destCol, fromRow: destRow, toCol: destCol, toRow: destRow, result: mineResult, odds: '2:1' });
+    if (mineResult === 'DE' || mineResult === 'EX') {
+      unit.destroyed = true;
+      addLog(`  ${UNIT_TYPES[unit.type].name} destroyed by minefield!`, 'log-result');
+      // Destroy passengers too
+      if (unit.passengers) {
+        for (const pid of unit.passengers) {
+          const p = state.units.find(u => u.id === pid);
+          if (p && !p.destroyed) { p.destroyed = true; }
+        }
+      }
+    } else if (mineResult === 'DR') {
+      unit.dispersed = true;
+      addLog(`  ${UNIT_TYPES[unit.type].name} dispersed by minefield`, 'log-result');
+    }
+    // Minefield is cleared after triggering
+    state.map[destCol][destRow] = T.CLEAR;
+    addLog(`  Minefield at (${destCol},${destRow}) cleared`, 'log-result');
+  }
+
   updateSpotting();
   updateUI();
+  autoSelectNext();
 }
 
 function loadUnit() {
@@ -2653,6 +2869,7 @@ function executeFire(attacker, targetCol, targetRow) {
     state.replayLog.push({ action: 'if_order', unitName: atype.name, fromCol: attacker.col, fromRow: attacker.row, toCol: targetCol, toRow: targetRow });
     showToast('IF order queued — resolves next combat phase');
     updateUI();
+    autoSelectNext();
     return;
   }
 
@@ -2689,6 +2906,7 @@ function executeFire(attacker, targetCol, targetRow) {
 
     if (shotDown) {
       updateUI();
+      autoSelectNext();
       return;
     }
 
@@ -2712,6 +2930,7 @@ function executeFire(attacker, targetCol, targetRow) {
       applyCombatResult(result, attacker, preview.defender);
     }
     updateUI();
+    autoSelectNext();
     return;
   }
 
@@ -2738,9 +2957,25 @@ function executeFire(attacker, targetCol, targetRow) {
 
   applyCombatResult(result, attacker, preview.defender);
   updateUI();
+  autoSelectNext();
+}
+
+function showCombatFlash(col, row, result) {
+  const colors = {
+    'DE': 'rgba(255,40,40,0.7)',   // red - defender eliminated
+    'DR': 'rgba(255,200,40,0.7)',  // yellow - defender retreat
+    'EX': 'rgba(255,100,20,0.7)',  // orange - exchange
+    'AR': 'rgba(100,140,255,0.7)', // blue - attacker retreat
+    'AE': 'rgba(100,140,255,0.7)', // blue - attacker eliminated
+  };
+  if (col >= 0 && row >= 0) {
+    state.combatFlash = { col, row, color: colors[result] || 'rgba(255,255,255,0.5)', endTime: Date.now() + 600 };
+  }
 }
 
 function applyCombatResult(result, attacker, defender) {
+  // Flash the target hex with result color
+  showCombatFlash(defender.col, defender.row, result);
   switch (result) {
     case 'DE':
       defender.destroyed = true;
@@ -3158,6 +3393,7 @@ function doAdvancePhase() {
       // Done placing reinforcements, proceed to combat (same side, no export)
       state.phase = PHASE_COMBAT;
       addLog(`— ${sideLabel(state.activeSide)} Combat Phase —`, 'log-phase');
+      showPhaseBanner(`${sideLabel(state.activeSide)} Combat`, state.activeSide);
       resolveIFOrders(state.activeSide);
       renderRack();
       resizeCanvas();
@@ -3175,12 +3411,14 @@ function doAdvancePhase() {
     if (availableAir.length > 0) {
       state.phase = PHASE_AIR;
       addLog(`— ${sideLabel(state.activeSide)} Air Phase —`, 'log-phase');
+      showPhaseBanner(`${sideLabel(state.activeSide)} Air Phase`, state.activeSide);
       renderRack();
       resizeCanvas();
       updateUI();
     } else {
       state.phase = PHASE_MOVEMENT;
       addLog(`— ${sideLabel(state.activeSide)} Movement Phase —`, 'log-phase');
+      showPhaseBanner(`${sideLabel(state.activeSide)} Movement`, state.activeSide);
       renderRack();
       resizeCanvas();
       updateUI();
@@ -3188,6 +3426,7 @@ function doAdvancePhase() {
   } else if (state.phase === PHASE_AIR) {
     state.phase = PHASE_MOVEMENT;
     addLog(`— ${sideLabel(state.activeSide)} Movement Phase —`, 'log-phase');
+    showPhaseBanner(`${sideLabel(state.activeSide)} Movement`, state.activeSide);
     renderRack();
     resizeCanvas();
     updateUI();
@@ -3212,6 +3451,7 @@ function doAdvancePhase() {
         u.catEligible = true;
       }
       addLog(`— ${sideLabel(state.activeSide)} Close Assault Phase —`, 'log-phase');
+      showPhaseBanner(`${sideLabel(state.activeSide)} Close Assault`, state.activeSide);
       renderRack();
       resizeCanvas();
       updateUI();
@@ -3419,6 +3659,7 @@ function exportGameState() {
     wrecks: state.wrecks,
     turnSummary: turnSummary,
     replayLog: state.replayLog,
+    viewZoom, viewPanX, viewPanY,
   };
   state.replayLog = []; // Clear after exporting
   const json = JSON.stringify(data);
@@ -3478,6 +3719,7 @@ function buildSharePayload() {
     ifOrders: state.ifOrders,
     wrecks: state.wrecks,
     replayLog: state.replayLog,
+    viewZoom, viewPanX, viewPanY,
   };
 }
 
@@ -3517,6 +3759,12 @@ function importGameState(encoded) {
   state.mouseHex = null;
   state.replayLog = []; // Fresh log for this player's segment
   state.replayActive = false;
+  state.combatFlash = null;
+
+  // Restore view state
+  if (data.viewZoom != null) viewZoom = data.viewZoom;
+  if (data.viewPanX != null) viewPanX = data.viewPanX;
+  if (data.viewPanY != null) viewPanY = data.viewPanY;
 
   // Store imported replay log for replay animation
   const importedReplayLog = data.replayLog || [];
@@ -3562,6 +3810,7 @@ function finishPhaseAdvance() {
       state.phase = PHASE_REINFORCEMENT;
       loadRackForSide(GERMAN, state.turn);
       addLog(`— German Reinforcement Phase —`, 'log-phase');
+      showPhaseBanner('German Reinforcements', GERMAN);
       renderRack();
       resizeCanvas();
       updateUI();
@@ -3569,12 +3818,14 @@ function finishPhaseAdvance() {
     }
     state.phase = PHASE_COMBAT;
     addLog(`— German Combat Phase —`, 'log-phase');
+    showPhaseBanner('German Combat', GERMAN);
     resolveIFOrders(GERMAN);
   } else {
     state.activeSide = ALLIED;
     state.turn++;
     recoverDispersedUnits(ALLIED);
     addLog(`═══ TURN ${state.turn} ═══`, 'log-phase');
+    showPhaseBanner(`Turn ${state.turn} — Allied`, ALLIED);
     if (checkReinforcements(ALLIED)) {
       state.phase = PHASE_REINFORCEMENT;
       loadRackForSide(ALLIED, state.turn);
@@ -3845,7 +4096,8 @@ document.addEventListener('keydown', (e) => {
         returnUnitToRack(sel);
       }
     }
-  } else if (e.key === 'Enter') {
+  } else if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
     advancePhase();
   } else if (e.key === 'n' || e.key === 'N') {
     if (isPlacing) {
@@ -3950,6 +4202,13 @@ function selectNextUnit() {
   }
   const idx = available.findIndex(u => u.id === sel.id);
   selectUnit(available[(idx + 1) % available.length]);
+}
+
+// Auto-advance to next available unit after the current one acts
+function autoSelectNext() {
+  setTimeout(() => {
+    selectNextUnit();
+  }, 150);
 }
 
 // Button bindings
@@ -4233,12 +4492,26 @@ function updateUI() {
   updateObjectiveControl();
   updateObjectivesPanel();
 
-  // Help text
+  // Context-sensitive help text
   const helpEl = document.getElementById('help-text');
   if (isPlacing) {
-    helpEl.innerHTML = 'Click rack unit, then click highlighted hex to place. Drag also works.<br>Right-click placed unit to return to rack. [R] Return &middot; [N] Next &middot; [Enter] Done';
+    helpEl.innerHTML = 'Click rack unit, then click highlighted hex to place. Drag also works.<br>[R] Return &middot; [N] Next &middot; [Enter] Done';
+  } else if (state.fireMode && state.pendingFire) {
+    helpEl.innerHTML = 'Click same target to <b>confirm</b> attack, or click different target to switch. Right-click/[Esc] to cancel.';
+  } else if (state.fireMode) {
+    helpEl.innerHTML = 'Click a <b>highlighted target</b> to preview attack. [Esc] cancel fire mode.';
+  } else if (state.moveMode) {
+    helpEl.innerHTML = 'Click a <b>highlighted hex</b> to move. [Esc] cancel move mode.';
+  } else if (state.phase === PHASE_AIR) {
+    helpEl.innerHTML = 'Select an aircraft, then [F] to fire. AA units may intercept. [N] Next &middot; [Enter] End Air Phase';
+  } else if (state.phase === PHASE_CLOSE_ASSAULT) {
+    helpEl.innerHTML = 'Select infantry adjacent to enemy, then [F] to close assault. [N] Next &middot; [Enter] End Phase';
+  } else if (state.phase === PHASE_COMBAT) {
+    helpEl.innerHTML = 'Select a unit, then [F] to fire at targets in range. [N] Next unit &middot; [Enter] End Combat Phase';
+  } else if (state.phase === PHASE_MOVEMENT) {
+    helpEl.innerHTML = 'Select a unit, then [M] to move. [L] Load &middot; [U] Unload &middot; [N] Next &middot; [Enter] End Movement Phase';
   } else {
-    helpEl.innerHTML = 'Click hex to select unit. Right-click to deselect.<br>[F] Fire mode &middot; [M] Move mode &middot; [N] Next unit &middot; [Enter] End phase';
+    helpEl.innerHTML = '[F] Fire &middot; [M] Move &middot; [N] Next unit &middot; [Enter] End phase';
   }
 }
 
@@ -4251,6 +4524,15 @@ function addLog(text, className) {
   while (entries.children.length > 100) {
     entries.removeChild(entries.lastChild);
   }
+}
+
+let bannerTimer = null;
+function showPhaseBanner(text, side) {
+  const el = document.getElementById('phase-banner');
+  el.textContent = text;
+  el.className = side === ALLIED ? 'allied visible' : 'german visible';
+  clearTimeout(bannerTimer);
+  bannerTimer = setTimeout(() => el.classList.remove('visible'), 1200);
 }
 
 let toastTimer = null;
