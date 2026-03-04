@@ -217,6 +217,34 @@ canvas { display: block; cursor: crosshair; flex: 1; }
   color: #e0dcc8;
 }
 #export-modal .btn-skip:hover { background: #555; }
+#export-modal .chat-area {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 10px;
+  background: #222;
+  color: #e0dcc8;
+  border: 1px solid #555;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  resize: vertical;
+  min-height: 40px;
+  max-height: 120px;
+}
+#export-modal .chat-area::placeholder { color: #666; }
+#summary-modal .chat-history {
+  max-height: 120px;
+  overflow-y: auto;
+  padding: 6px;
+  background: #1a2a1a;
+  border: 1px solid #4a6a3a;
+  margin-top: 4px;
+  font-size: 12px;
+}
+#summary-modal .chat-msg { padding: 3px 0; border-bottom: 1px solid #333; }
+#summary-modal .chat-msg .chat-side { font-weight: bold; }
+#summary-modal .chat-side-allied { color: #8ab86e; }
+#summary-modal .chat-side-german { color: #b0b0b0; }
+#summary-modal .chat-text { color: #ddd; }
 
 /* Objectives panel */
 #objectives-panel { padding: 8px 12px; border-bottom: 2px solid #555; }
@@ -541,6 +569,11 @@ canvas { display: block; cursor: crosshair; flex: 1; }
       <div class="sc-meta" id="resume-filename">Click to select a turn file</div>
       <input type="file" id="resume-file-input" accept=".json" style="display:none">
     </div>
+    <div class="scenario-card" id="card-load-save">
+      <h2>Load Browser Save</h2>
+      <div class="sc-desc">Resume a game saved to browser localStorage. Your saves persist between sessions.</div>
+      <div class="sc-meta" id="load-save-meta">Click to check for saved games</div>
+    </div>
   </div>
 </div>
 <div id="map-container">
@@ -587,6 +620,10 @@ canvas { display: block; cursor: crosshair; flex: 1; }
   <div id="battle-log">
     <h3>Battle Log</h3>
     <div id="log-entries"></div>
+  </div>
+  <div id="save-bar" style="padding:4px 12px;border-top:1px solid #444;display:flex;gap:6px;">
+    <button id="btn-save-game" style="flex:1;padding:5px;background:#3a4a3a;color:#afa;border:1px solid #5a7a5a;font-family:Courier New;font-size:11px;cursor:pointer;">Save Game</button>
+    <button id="btn-load-game" style="flex:1;padding:5px;background:#3a3a4a;color:#aaf;border:1px solid #5a5a7a;font-family:Courier New;font-size:11px;cursor:pointer;">Load Save</button>
   </div>
   <div id="help-text">
     Click rack unit, then click highlighted hex to place.<br>
@@ -710,11 +747,18 @@ canvas { display: block; cursor: crosshair; flex: 1; }
     <p>Mouse: left-click select/place &middot; right-click deselect/return &middot; drag from rack to map<br>
     Scroll wheel: zoom in/out &middot; Right-drag, middle-drag, or Shift+drag: pan</p>
 
+    <h3>PBEM &amp; Saves</h3>
+    <table>
+      <tr><th>Feature</th><th>Description</th></tr>
+      <tr><td><kbd>Ctrl+S</kbd></td><td>Save game to browser localStorage</td></tr>
+      <tr><td>Chat</td><td>Add a message for your opponent in the export dialog</td></tr>
+      <tr><td>Email Summary</td><td>Copy a text summary to paste into your email</td></tr>
+      <tr><td>Load Save</td><td>Resume from browser save (sidebar or scenario screen)</td></tr>
+    </table>
     <h3>Planned Features</h3>
     <table>
       <tr><th>Feature</th><th>Description</th></tr>
       <tr><td>Undo</td><td>Undo last action within a phase</td></tr>
-      <tr><td>Save / Load</td><td>Serialize game state to localStorage</td></tr>
       <tr><td>AI Opponent</td><td>Computer-controlled side for solo play</td></tr>
     </table>
   </div>
@@ -724,8 +768,10 @@ canvas { display: block; cursor: crosshair; flex: 1; }
   <div class="modal-box">
     <h2>Turn Complete!</h2>
     <div class="modal-info" id="export-filename"></div>
+    <textarea class="chat-area" id="export-chat" rows="2" placeholder="Add a message for your opponent (optional)..."></textarea>
     <button class="btn-export" id="btn-export-download">Export &amp; Download Turn File</button>
     <button class="btn-export" id="btn-export-link">Copy Share Link</button>
+    <button class="btn-export" id="btn-export-copy-text">Copy Email Summary</button>
     <button class="btn-skip" id="btn-export-skip">Continue Without Export</button>
   </div>
 </div>
@@ -1010,6 +1056,7 @@ let state = {
   replayLog: [],            // structured action log for turn replay: { action, ... }
   replayActive: false,      // true when replay animation is playing
   combatFlash: null,        // { col, row, color, endTime } for combat result flash
+  chatMessages: [],         // PBEM chat: { turn, side, text }
 };
 
 let nextUnitId = 1;
@@ -4048,7 +4095,7 @@ function buildTurnSummary() {
   };
 }
 
-function showTurnSummary(summary, replayLog) {
+function showTurnSummary(summary, replayLog, chatMessages) {
   const modal = document.getElementById('summary-modal');
   const title = document.getElementById('summary-title');
   const content = document.getElementById('summary-content');
@@ -4060,6 +4107,20 @@ function showTurnSummary(summary, replayLog) {
   // Replay button if actions were recorded
   if (replayLog && replayLog.length > 0) {
     html += `<div style="text-align:center;margin-bottom:10px;"><button id="btn-replay" style="padding:8px 16px;background:#4a6a3a;color:#dfd;border:1px solid #6a8a5a;font-family:Courier New;font-size:13px;cursor:pointer;">Replay ${replayLog.length} Action(s)</button></div>`;
+  }
+
+  // Chat messages
+  if (chatMessages && chatMessages.length > 0) {
+    html += '<div class="summary-section">';
+    html += '<div class="summary-label">Messages</div>';
+    html += '<div class="chat-history">';
+    for (const msg of chatMessages) {
+      const sideClass = msg.side === ALLIED ? 'chat-side-allied' : 'chat-side-german';
+      const sideName = msg.side === ALLIED ? 'Allied' : 'German';
+      const escaped = msg.text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      html += `<div class="chat-msg"><span class="chat-side ${sideClass}">[T${msg.turn} ${sideName}]</span> <span class="chat-text">${escaped}</span></div>`;
+    }
+    html += '</div></div>';
   }
 
   // Casualties section
@@ -4156,7 +4217,17 @@ function playTurnReplay(replayLog) {
   playNext();
 }
 
+function collectChatMessage() {
+  const textarea = document.getElementById('export-chat');
+  const text = textarea ? textarea.value.trim() : '';
+  if (text) {
+    state.chatMessages.push({ turn: state.turn, side: state.activeSide, text });
+    textarea.value = '';
+  }
+}
+
 function exportGameState() {
+  collectChatMessage();
   const turnSummary = buildTurnSummary();
   const data = {
     version: 1,
@@ -4184,6 +4255,7 @@ function exportGameState() {
     wrecks: state.wrecks,
     turnSummary: turnSummary,
     replayLog: state.replayLog,
+    chatMessages: state.chatMessages,
     viewZoom, viewPanX, viewPanY,
   };
   state.replayLog = []; // Clear after exporting
@@ -4221,6 +4293,7 @@ async function decompressFromBase64url(encoded) {
 }
 
 function buildSharePayload() {
+  collectChatMessage();
   return {
     version: 1,
     scenarioName: state.scenarioName,
@@ -4244,6 +4317,7 @@ function buildSharePayload() {
     ifOrders: state.ifOrders,
     wrecks: state.wrecks,
     replayLog: state.replayLog,
+    chatMessages: state.chatMessages,
     viewZoom, viewPanX, viewPanY,
   };
 }
@@ -4285,6 +4359,7 @@ function importGameState(encoded) {
   state.replayLog = []; // Fresh log for this player's segment
   state.replayActive = false;
   state.combatFlash = null;
+  state.chatMessages = data.chatMessages || [];
 
   // Restore view state
   if (data.viewZoom != null) viewZoom = data.viewZoom;
@@ -4310,7 +4385,7 @@ function importGameState(encoded) {
 
   // Show turn summary with replay option if actions were recorded
   if (data.turnSummary) {
-    showTurnSummary(data.turnSummary, importedReplayLog);
+    showTurnSummary(data.turnSummary, importedReplayLog, state.chatMessages);
   }
 }
 
@@ -4373,7 +4448,184 @@ function showExportModal() {
   const safeName = (state.scenarioName || 'game').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
   const filename = `${safeName}-turn-${state.turn}-${state.activeSide}.json`;
   document.getElementById('export-filename').textContent = `File: ${filename}`;
+  document.getElementById('export-chat').value = '';
   document.getElementById('export-modal').classList.add('visible');
+}
+
+function buildEmailSummary() {
+  // Peek at pending chat text without consuming it
+  const pendingChat = (document.getElementById('export-chat')?.value || '').trim();
+  const summary = buildTurnSummary();
+  const side = state.activeSide === ALLIED ? 'Allied' : 'German';
+  const scenario = state.scenarioName || 'Unknown';
+  let text = `IRON & STEEL — ${scenario}\n`;
+  text += `Turn ${state.turn} — ${side} Segment Complete\n`;
+  text += `${'─'.repeat(40)}\n\n`;
+
+  text += `CASUALTIES\n`;
+  text += `  Allied losses: ${summary.alliedLosses}\n`;
+  text += `  German losses: ${summary.germanLosses}\n\n`;
+
+  if (summary.alliedObjectives > 0 || summary.germanObjectives > 0) {
+    text += `OBJECTIVES\n`;
+    text += `  Allied holds: ${summary.alliedObjectives}\n`;
+    text += `  German holds: ${summary.germanObjectives}\n\n`;
+  }
+
+  // Cobra exit progress
+  const vc = state.victoryConditions;
+  if (vc && vc.alliedWin && vc.alliedWin.exitUnitsNeeded) {
+    text += `BREAKOUT PROGRESS\n`;
+    text += `  Units exited: ${vc.alliedExitedUnits || 0} / ${vc.alliedWin.exitUnitsNeeded}\n\n`;
+  }
+
+  if (state.replayLog.length > 0) {
+    text += `ACTIONS THIS TURN (${state.replayLog.length})\n`;
+    for (const entry of state.replayLog) {
+      switch (entry.action) {
+        case 'move':
+          text += `  ${entry.unitName} moved to (${entry.toCol},${entry.toRow})\n`;
+          break;
+        case 'fire':
+          text += `  ${entry.unitName} fired at ${entry.targetName} — ${entry.odds} → ${entry.result}\n`;
+          break;
+        case 'overrun':
+          text += `  ${entry.unitName} overran ${entry.targetName} — ${entry.odds} → ${entry.result}\n`;
+          break;
+        case 'air_attack':
+          text += `  ${entry.unitName} air attack at (${entry.toCol},${entry.toRow}) → ${entry.result}\n`;
+          break;
+        case 'if_order':
+          text += `  ${entry.unitName} plotted IF at (${entry.toCol},${entry.toRow})\n`;
+          break;
+        case 'exit':
+          text += `  ${entry.unitName} exited south map edge\n`;
+          break;
+      }
+    }
+    text += '\n';
+  }
+
+  const allChats = [...state.chatMessages];
+  if (pendingChat) {
+    allChats.push({ turn: state.turn, side: state.activeSide, text: pendingChat });
+  }
+  if (allChats.length > 0) {
+    text += `MESSAGES\n`;
+    for (const msg of allChats) {
+      const s = msg.side === ALLIED ? 'Allied' : 'German';
+      text += `  [T${msg.turn} ${s}] ${msg.text}\n`;
+    }
+    text += '\n';
+  }
+
+  text += `${'─'.repeat(40)}\n`;
+  text += `Your turn! Load the attached .json file to continue.\n`;
+  return text;
+}
+
+function saveToLocalStorage() {
+  const turnSummary = buildTurnSummary();
+  const data = {
+    version: 1,
+    scenarioName: state.scenarioName,
+    map: state.map,
+    units: state.units,
+    turn: state.turn,
+    activeSide: state.activeSide,
+    phase: state.phase,
+    rack: state.rack,
+    allReinforcements: state.allReinforcements,
+    placementOrder: state.placementOrder,
+    placementZones: {
+      [ALLIED]: state.placementZones ? [...state.placementZones[ALLIED]] : [],
+      [GERMAN]: state.placementZones ? [...state.placementZones[GERMAN]] : [],
+    },
+    nextUnitId: nextUnitId,
+    MAP_COLS: MAP_COLS,
+    MAP_ROWS: MAP_ROWS,
+    battleLog: document.getElementById('log-entries').innerHTML,
+    victoryConditions: state.victoryConditions,
+    alliedLosses: state.alliedLosses,
+    germanLosses: state.germanLosses,
+    ifOrders: state.ifOrders,
+    wrecks: state.wrecks,
+    turnSummary: turnSummary,
+    replayLog: state.replayLog,
+    chatMessages: state.chatMessages,
+    viewZoom, viewPanX, viewPanY,
+    savedAt: new Date().toISOString(),
+  };
+  const json = JSON.stringify(data);
+  const key = `ironSteel_${(state.scenarioName || 'game').replace(/[^a-zA-Z0-9]/g, '_')}`;
+  try {
+    localStorage.setItem(key, json);
+    showToast(`Game saved (${key})`);
+  } catch (err) {
+    showToast('Save failed: storage full or unavailable');
+  }
+}
+
+function loadFromLocalStorage() {
+  // Find all saved games
+  const saves = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key.startsWith('ironSteel_')) {
+      try {
+        const data = JSON.parse(localStorage.getItem(key));
+        saves.push({ key, scenario: data.scenarioName, turn: data.turn, side: data.activeSide === ALLIED ? 'Allied' : 'German', savedAt: data.savedAt });
+      } catch (e) { /* skip corrupt */ }
+    }
+  }
+  if (saves.length === 0) {
+    showToast('No saved games found');
+    return;
+  }
+  // If only one save, load it directly
+  if (saves.length === 1) {
+    loadSaveByKey(saves[0].key);
+    return;
+  }
+  // Show pick dialog
+  showSavePickerModal(saves);
+}
+
+function loadSaveByKey(key) {
+  try {
+    const json = localStorage.getItem(key);
+    if (!json) { showToast('Save not found'); return; }
+    const data = JSON.parse(json);
+    const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+    importGameState(encoded);
+    document.getElementById('scenario-select').style.display = 'none';
+    addLog(`Game loaded from browser save`, 'log-phase');
+    requestAnimationFrame(render);
+    showToast('Game loaded');
+  } catch (err) {
+    showToast('Failed to load save: ' + err.message);
+  }
+}
+
+function deleteSaveByKey(key) {
+  localStorage.removeItem(key);
+  showToast(`Save deleted`);
+}
+
+function showSavePickerModal(saves) {
+  const modal = document.getElementById('confirm-modal');
+  const title = document.getElementById('confirm-title');
+  const info = document.getElementById('confirm-info');
+  title.textContent = 'Load Saved Game';
+  let html = '';
+  for (const s of saves) {
+    const when = s.savedAt ? new Date(s.savedAt).toLocaleString() : 'unknown';
+    html += `${s.scenario} — Turn ${s.turn} (${s.side})\nSaved: ${when}\n\n`;
+  }
+  info.textContent = saves.length + ' save(s) found. Loading most recent...';
+  // Load the most recent save
+  saves.sort((a, b) => (b.savedAt || '').localeCompare(a.savedAt || ''));
+  loadSaveByKey(saves[0].key);
 }
 
 function sideLabel(side) {
@@ -4685,6 +4937,9 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault(); viewPanY += 60;
   } else if (e.key === 'ArrowDown') {
     e.preventDefault(); viewPanY -= 60;
+  } else if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    saveToLocalStorage();
   } else if (e.key === '+' || e.key === '=') {
     viewZoom = Math.min(2.5, viewZoom * 1.15);
   } else if (e.key === '-') {
@@ -5112,6 +5367,10 @@ function init() {
         MAP_COLS = 30;
         MAP_ROWS = 20;
         data.map = generateOmahaMap();
+      } else if (name.toLowerCase().includes('gold')) {
+        MAP_COLS = 28;
+        MAP_ROWS = 16;
+        data.map = generateGoldMap();
       } else {
         MAP_COLS = 24;
         MAP_ROWS = 18;
@@ -5215,10 +5474,49 @@ function init() {
       console.error('Share link error:', err);
     }
   });
+  document.getElementById('btn-export-copy-text').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-export-copy-text');
+    try {
+      const text = buildEmailSummary();
+      await navigator.clipboard.writeText(text);
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = 'Copy Email Summary'; }, 2000);
+    } catch (err) {
+      btn.textContent = 'Copy failed!';
+      setTimeout(() => { btn.textContent = 'Copy Email Summary'; }, 2000);
+    }
+  });
   document.getElementById('btn-export-skip').addEventListener('click', () => {
     document.getElementById('export-modal').classList.remove('visible');
     renderRack();
     resizeCanvas();
+  });
+
+  // Save/Load buttons
+  document.getElementById('btn-save-game').addEventListener('click', saveToLocalStorage);
+  document.getElementById('btn-load-game').addEventListener('click', loadFromLocalStorage);
+
+  // Load save card on scenario select
+  document.getElementById('card-load-save').addEventListener('click', () => {
+    const saves = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key.startsWith('ironSteel_')) {
+        try {
+          const data = JSON.parse(localStorage.getItem(key));
+          saves.push({ key, scenario: data.scenarioName, turn: data.turn, side: data.activeSide === 0 ? 'Allied' : 'German', savedAt: data.savedAt });
+        } catch (e) { /* skip corrupt */ }
+      }
+    }
+    if (saves.length === 0) {
+      document.getElementById('load-save-meta').textContent = 'No saved games found';
+      return;
+    }
+    saves.sort((a, b) => (b.savedAt || '').localeCompare(a.savedAt || ''));
+    const s = saves[0];
+    const when = s.savedAt ? new Date(s.savedAt).toLocaleString() : 'unknown';
+    document.getElementById('load-save-meta').textContent = `Loading: ${s.scenario} T${s.turn} (${s.side})...`;
+    loadSaveByKey(s.key);
   });
 }
 
